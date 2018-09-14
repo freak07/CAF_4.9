@@ -25,7 +25,7 @@ The required properties for rpmh-master-stats are:
 
 Example:
 
-qcom,rpmh-master-stats@b221200 {
+qcom,rpmh-master-stats {
 	compatible = "qcom,rpmh-master-stats";
 	reg = <0xb221200 0x60>;
 };

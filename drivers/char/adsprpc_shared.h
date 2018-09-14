@@ -36,6 +36,7 @@
 #define FASTRPC_GLINK_GUID "fastrpcglink-apps-dsp"
 #define FASTRPC_SMD_GUID "fastrpcsmd-apps-dsp"
 #define DEVICE_NAME      "adsprpc-smd"
+#define DEVICE_NAME_SECURE "adsprpc-smd-secure"
 
 /* Set for buffers that have no virtual mapping in userspace */
 #define FASTRPC_ATTR_NOVA 0x1
@@ -68,6 +69,7 @@
 #define FASTRPC_INIT_ATTACH      0
 #define FASTRPC_INIT_CREATE      1
 #define FASTRPC_INIT_CREATE_STATIC  2
+#define FASTRPC_INIT_ATTACH_SENSORS 3
 
 /* Retrives number of input buffers from the scalars parameter */
 #define REMOTE_SCALARS_INBUFS(sc)        (((sc) >> 16) & 0x0ff)
@@ -244,11 +246,15 @@ struct fastrpc_ctrl_latency {
 	uint32_t enable;	//!latency control enable
 	uint32_t level;		//!level of control
 };
-
+#define FASTRPC_CONTROL_SMMU   (2)
+struct fastrpc_ctrl_smmu {
+	uint32_t sharedcb;
+};
 struct fastrpc_ioctl_control {
 	uint32_t req;
 	union {
 		struct fastrpc_ctrl_latency lp;
+		struct fastrpc_ctrl_smmu smmu;
 	};
 };
 

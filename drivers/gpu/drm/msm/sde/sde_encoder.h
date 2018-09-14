@@ -31,6 +31,7 @@
 #define SDE_ENCODER_FRAME_EVENT_SIGNAL_RETIRE_FENCE	BIT(4)
 
 #define IDLE_POWERCOLLAPSE_DURATION	(66 - 16/2)
+#define IDLE_POWERCOLLAPSE_IN_EARLY_WAKEUP (200 - 16/2)
 
 /**
  * Encoder functions and data types
@@ -97,10 +98,10 @@ void sde_encoder_register_vblank_callback(struct drm_encoder *encoder,
  *	will be called after the request is complete, or other events.
  * @encoder:	encoder pointer
  * @cb:		callback pointer, provide NULL to deregister
- * @data:	user data provided to callback
+ * @crtc:	pointer to drm_crtc object interested in frame events
  */
 void sde_encoder_register_frame_event_callback(struct drm_encoder *encoder,
-		void (*cb)(void *, u32), void *data);
+		void (*cb)(void *, u32), struct drm_crtc *crtc);
 
 /**
  * sde_encoder_get_rsc_client - gets the rsc client state for primary
@@ -241,10 +242,26 @@ int sde_encoder_update_caps_for_cont_splash(struct drm_encoder *encoder);
  * sde_encoder_display_failure_notification - update sde encoder state for
  * esd timeout or other display failure notification. This event flows from
  * dsi, sde_connector to sde_encoder.
+ *
  *      TODO: manage the event at sde_kms level for forward processing.
  * @drm_enc:    Pointer to drm encoder structure
  * @Return:     true if successful in updating the encoder structure
  */
 int sde_encoder_display_failure_notification(struct drm_encoder *enc);
+
+/**
+ * sde_encoder_in_clone_mode - checks if underlying phys encoder is in clone
+ *	mode or independent display mode. ref@ WB in Concurrent writeback mode.
+ * @drm_enc:    Pointer to drm encoder structure
+ * @Return:     true if successful in updating the encoder structure
+ */
+int sde_encoder_in_clone_mode(struct drm_encoder *enc);
+
+/**
+ * sde_encoder_control_idle_pc - control enable/disable of idle power collapse
+ * @drm_enc:    Pointer to drm encoder structure
+ * @enable:	enable/disable flag
+ */
+void sde_encoder_control_idle_pc(struct drm_encoder *enc, bool enable);
 
 #endif /* __SDE_ENCODER_H__ */
