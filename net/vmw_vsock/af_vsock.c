@@ -1101,19 +1101,10 @@ static const struct proto_ops vsock_dgram_ops = {
 	.sendpage = sock_no_sendpage,
 };
 
-static int vsock_transport_cancel_pkt(struct vsock_sock *vsk)
-{
-	if (!transport->cancel_pkt)
-		return -EOPNOTSUPP;
-
-	return transport->cancel_pkt(vsk);
-}
-
 static void vsock_connect_timeout(struct work_struct *work)
 {
 	struct sock *sk;
 	struct vsock_sock *vsk;
-	int cancel = 0;
 
 	vsk = container_of(work, struct vsock_sock, dwork.work);
 	sk = sk_vsock(vsk);
@@ -1124,11 +1115,8 @@ static void vsock_connect_timeout(struct work_struct *work)
 		sk->sk_state = SS_UNCONNECTED;
 		sk->sk_err = ETIMEDOUT;
 		sk->sk_error_report(sk);
-		cancel = 1;
 	}
 	release_sock(sk);
-	if (cancel)
-		vsock_transport_cancel_pkt(vsk);
 
 	sock_put(sk);
 }
@@ -1235,13 +1223,11 @@ static int vsock_stream_connect(struct socket *sock, struct sockaddr *addr,
 			err = sock_intr_errno(timeout);
 			sk->sk_state = SS_UNCONNECTED;
 			sock->state = SS_UNCONNECTED;
-			vsock_transport_cancel_pkt(vsk);
 			goto out_wait;
 		} else if (timeout == 0) {
 			err = -ETIMEDOUT;
 			sk->sk_state = SS_UNCONNECTED;
 			sock->state = SS_UNCONNECTED;
-			vsock_transport_cancel_pkt(vsk);
 			goto out_wait;
 		}
 
@@ -1538,7 +1524,8 @@ static int vsock_stream_sendmsg(struct socket *sock, struct msghdr *msg,
 	long timeout;
 	int err;
 	struct vsock_transport_send_notify_data send_data;
-	DEFINE_WAIT_FUNC(wait, woken_wake_function);
+
+	DEFINE_WAIT(wait);
 
 	sk = sock->sk;
 	vsk = vsock_sk(sk);
@@ -1581,10 +1568,11 @@ static int vsock_stream_sendmsg(struct socket *sock, struct msghdr *msg,
 	if (err < 0)
 		goto out;
 
+
 	while (total_written < len) {
 		ssize_t written;
 
-		add_wait_queue(sk_sleep(sk), &wait);
+		prepare_to_wait(sk_sleep(sk), &wait, TASK_INTERRUPTIBLE);
 		while (vsock_stream_has_space(vsk) == 0 &&
 		       sk->sk_err == 0 &&
 		       !(sk->sk_shutdown & SEND_SHUTDOWN) &&
@@ -1593,30 +1581,33 @@ static int vsock_stream_sendmsg(struct socket *sock, struct msghdr *msg,
 			/* Don't wait for non-blocking sockets. */
 			if (timeout == 0) {
 				err = -EAGAIN;
-				remove_wait_queue(sk_sleep(sk), &wait);
+				finish_wait(sk_sleep(sk), &wait);
 				goto out_err;
 			}
 
 			err = transport->notify_send_pre_block(vsk, &send_data);
 			if (err < 0) {
-				remove_wait_queue(sk_sleep(sk), &wait);
+				finish_wait(sk_sleep(sk), &wait);
 				goto out_err;
 			}
 
 			release_sock(sk);
-			timeout = wait_woken(&wait, TASK_INTERRUPTIBLE, timeout);
+			timeout = schedule_timeout(timeout);
 			lock_sock(sk);
 			if (signal_pending(current)) {
 				err = sock_intr_errno(timeout);
-				remove_wait_queue(sk_sleep(sk), &wait);
+				finish_wait(sk_sleep(sk), &wait);
 				goto out_err;
 			} else if (timeout == 0) {
 				err = -EAGAIN;
-				remove_wait_queue(sk_sleep(sk), &wait);
+				finish_wait(sk_sleep(sk), &wait);
 				goto out_err;
 			}
+
+			prepare_to_wait(sk_sleep(sk), &wait,
+					TASK_INTERRUPTIBLE);
 		}
-		remove_wait_queue(sk_sleep(sk), &wait);
+		finish_wait(sk_sleep(sk), &wait);
 
 		/* These checks occur both as part of and after the loop
 		 * conditional since we need to check before and after

@@ -305,8 +305,7 @@ static unsigned int sync_file_poll(struct file *file, poll_table *wait)
 
 	poll_wait(file, &sync_file->wq, wait);
 
-	if (list_empty(&sync_file->cb.node) &&
-	    !test_and_set_bit(POLL_ENABLED, &sync_file->flags)) {
+	if (!test_and_set_bit(POLL_ENABLED, &sync_file->flags)) {
 		if (fence_add_callback(sync_file->fence, &sync_file->cb,
 					   fence_check_cb_func) < 0)
 			wake_up_all(&sync_file->wq);
@@ -377,8 +376,10 @@ static void sync_fill_fence_info(struct fence *fence,
 		sizeof(info->obj_name));
 	strlcpy(info->driver_name, fence->ops->get_driver_name(fence),
 		sizeof(info->driver_name));
-
-	info->status = fence_get_status(fence);
+	if (fence_is_signaled(fence))
+		info->status = fence->status >= 0 ? 1 : fence->status;
+	else
+		info->status = 0;
 	info->timestamp_ns = ktime_to_ns(fence->timestamp);
 }
 

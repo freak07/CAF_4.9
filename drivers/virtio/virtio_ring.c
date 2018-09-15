@@ -423,6 +423,8 @@ unmap_release:
 		i = vq->vring.desc[i].next;
 	}
 
+	vq->vq.num_free += total_sg;
+
 	if (indirect)
 		kfree(desc);
 

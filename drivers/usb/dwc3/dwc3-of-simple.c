@@ -58,10 +58,8 @@ static int dwc3_of_simple_clk_init(struct dwc3_of_simple *simple, int count)
 
 		clk = of_clk_get(np, i);
 		if (IS_ERR(clk)) {
-			while (--i >= 0) {
-				clk_disable_unprepare(simple->clks[i]);
+			while (--i >= 0)
 				clk_put(simple->clks[i]);
-			}
 			return PTR_ERR(clk);
 		}
 

@@ -20,7 +20,6 @@ enum qbt1000_commands {
 	QBT1000_SET_FINGER_DETECT_KEY = 103,
 	QBT1000_CONFIGURE_POWER_KEY = 104
 };
-#define QBT1000_ENABLE_GESTURES 105
 
 /*
  * enum qbt1000_fw_event -
@@ -77,15 +76,6 @@ struct qbt1000_send_tz_cmd {
 struct qbt1000_erie_event {
 	uint8_t *buf;
 	uint32_t buf_len;
-};
-
-/*
- * struct qbt1000_enable_gestures -
- *      used to configure whether gestures detection is enabled or disabled
- * @enable - if non-zero, gestures detection is enabled
- */
-struct qbt1000_enable_gestures {
-	unsigned int enable;
 };
 
 /*

@@ -1,4 +1,4 @@
-/* Copyright (c) 2017-2018, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -23,24 +23,11 @@ struct callback_param {
 
 static int ipa_pm_ut_setup(void **ppriv)
 {
-	int i;
 
 	IPA_UT_DBG("Start Setup\n");
 
 	/* decrement UT vote */
 	IPA_ACTIVE_CLIENTS_DEC_SPECIAL("IPA_UT");
-
-	/*decouple PM from RPM */
-	ipa3_ctx->enable_clock_scaling = false;
-
-	if (ipa3_ctx->use_ipa_pm) {
-		for (i = 0; i < IPA_PM_MAX_CLIENTS; i++) {
-			ipa_pm_deactivate_sync(i);
-			ipa_pm_deregister(i);
-		}
-
-		ipa_pm_destroy();
-	}
 
 	return 0;
 }
@@ -48,7 +35,6 @@ static int ipa_pm_ut_setup(void **ppriv)
 static int ipa_pm_ut_teardown(void *priv)
 {
 	IPA_UT_DBG("Start Teardown\n");
-	IPA_UT_ERR("WARNING: IPA_PM HAS BEEN DESTROYED, REBOOT TO RE_INIT\n");
 
 	/* undo UT vote */
 	IPA_ACTIVE_CLIENTS_INC_SPECIAL("IPA_UT");
@@ -120,7 +106,7 @@ static int ipa_pm_ut_single_registration(void *priv)
 	struct callback_param user_data;
 
 	struct ipa_pm_init_params init_params = {
-		.threshold_size = 2,
+		.threshold_size = IPA_PM_THRESHOLD_MAX,
 		.default_threshold = {600, 1000}
 	};
 
@@ -237,7 +223,7 @@ static int ipa_pm_ut_double_register_activate(void *priv)
 	struct callback_param user_data;
 
 	struct ipa_pm_init_params init_params = {
-		.threshold_size = 2,
+		.threshold_size = IPA_PM_THRESHOLD_MAX,
 		.default_threshold = {600, 1000}
 	};
 
@@ -341,7 +327,7 @@ static int ipa_pm_ut_deferred_deactivate(void *priv)
 	struct callback_param user_data;
 
 	struct ipa_pm_init_params init_params = {
-		.threshold_size = 2,
+		.threshold_size = IPA_PM_THRESHOLD_MAX,
 		.default_threshold = {600, 1000}
 	};
 
@@ -450,7 +436,7 @@ static int ipa_pm_ut_two_clients_activate(void *priv)
 
 
 	struct ipa_pm_init_params init_params = {
-		.threshold_size = 2,
+		.threshold_size = IPA_PM_THRESHOLD_MAX,
 		.default_threshold = {600, 1000}
 	};
 
@@ -662,7 +648,7 @@ static int ipa_pm_ut_deactivate_all_deferred(void *priv)
 	struct callback_param user_data;
 
 	struct ipa_pm_init_params init_params = {
-		.threshold_size = 2,
+		.threshold_size = IPA_PM_THRESHOLD_MAX,
 		.default_threshold = {600, 1000}
 	};
 
@@ -811,7 +797,7 @@ static int ipa_pm_ut_deactivate_after_activate(void *priv)
 	struct callback_param user_data;
 
 	struct ipa_pm_init_params init_params = {
-		.threshold_size = 2,
+		.threshold_size = IPA_PM_THRESHOLD_MAX,
 		.default_threshold = {600, 1000}
 	};
 
@@ -899,7 +885,7 @@ static int ipa_pm_ut_atomic_activate(void *priv)
 	unsigned long flags;
 
 	struct ipa_pm_init_params init_params = {
-		.threshold_size = 2,
+		.threshold_size = IPA_PM_THRESHOLD_MAX,
 		.default_threshold = {600, 1000}
 	};
 
@@ -971,7 +957,7 @@ static int ipa_pm_ut_deactivate_loop(void *priv)
 	int i, hdl_USB, hdl_WLAN, vote;
 
 	struct ipa_pm_init_params init_params = {
-		.threshold_size = 2,
+		.threshold_size = IPA_PM_THRESHOLD_MAX,
 		.default_threshold = {600, 1000}
 	};
 
@@ -1109,7 +1095,7 @@ static int ipa_pm_ut_set_perf_profile(void *priv)
 	int hdl_USB, hdl_WLAN, vote, idx;
 
 	struct ipa_pm_init_params init_params = {
-		.threshold_size = 2,
+		.threshold_size = IPA_PM_THRESHOLD_MAX,
 		.default_threshold = {600, 1000}
 	};
 
@@ -1224,7 +1210,7 @@ static int ipa_pm_ut_group_tput(void *priv)
 	int hdl_USB, hdl_WLAN, hdl_MODEM, vote, idx;
 
 	struct ipa_pm_init_params init_params = {
-		.threshold_size = 2,
+		.threshold_size = IPA_PM_THRESHOLD_MAX,
 		.default_threshold = {600, 1000}
 	};
 
@@ -1391,7 +1377,7 @@ static int ipa_pm_ut_skip_clk_vote_tput(void *priv)
 	int hdl_USB, hdl_WLAN, hdl_MODEM, vote, idx;
 
 	struct ipa_pm_init_params init_params = {
-		.threshold_size = 2,
+		.threshold_size = IPA_PM_THRESHOLD_MAX,
 		.default_threshold = {600, 1000}
 	};
 
@@ -1556,7 +1542,7 @@ static int ipa_pm_ut_simple_exception(void *priv)
 	};
 
 	struct ipa_pm_init_params init_params = {
-		.threshold_size = 2,
+		.threshold_size = IPA_PM_THRESHOLD_MAX,
 		.default_threshold = {600, 1000},
 		.exception_size = 1,
 		.exceptions[0] = exceptions,

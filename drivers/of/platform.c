@@ -502,7 +502,7 @@ int of_platform_default_populate(struct device_node *root,
 }
 EXPORT_SYMBOL_GPL(of_platform_default_populate);
 
-#if !defined(CONFIG_PPC) && !defined(CONFIG_ARCH_MSM8953_BOOT_ORDERING)
+#ifndef CONFIG_PPC
 static int __init of_platform_default_populate_init(void)
 {
 	struct device_node *node;

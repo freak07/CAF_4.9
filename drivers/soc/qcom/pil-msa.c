@@ -264,12 +264,6 @@ int pil_mss_assert_resets(struct q6v5_data *drv)
 
 	pil_mss_pdc_sync(drv, 1);
 	pil_mss_alt_reset(drv, 1);
-	if (drv->reset_clk) {
-		pil_mss_disable_clks(drv);
-		if (drv->ahb_clk_vote)
-			clk_disable_unprepare(drv->ahb_clk);
-	}
-
 	ret = pil_mss_restart_reg(drv, true);
 
 	return ret;
@@ -284,9 +278,6 @@ int pil_mss_deassert_resets(struct q6v5_data *drv)
 		return ret;
 	/* Wait 6 32kHz sleep cycles for reset */
 	udelay(200);
-
-	if (drv->reset_clk)
-		pil_mss_enable_clks(drv);
 	pil_mss_alt_reset(drv, 0);
 	pil_mss_pdc_sync(drv, false);
 
@@ -582,7 +573,7 @@ static int pil_mss_reset(struct pil_desc *pil)
 	if (ret)
 		goto err_clks;
 
-	if (!pil->minidump_ss || !pil->modem_ssr) {
+	if (!pil->minidump || !pil->modem_ssr) {
 		/* Save state of modem debug register before full reset */
 		debug_val = readl_relaxed(drv->reg_base + QDSP6SS_DBG_CFG);
 	}
@@ -595,7 +586,7 @@ static int pil_mss_reset(struct pil_desc *pil)
 	if (ret)
 		goto err_restart;
 
-	if (!pil->minidump_ss || !pil->modem_ssr) {
+	if (!pil->minidump || !pil->modem_ssr) {
 		writel_relaxed(debug_val, drv->reg_base + QDSP6SS_DBG_CFG);
 		if (modem_dbg_cfg)
 			writel_relaxed(modem_dbg_cfg,
@@ -797,18 +788,14 @@ err_invalid_fw:
 int pil_mss_debug_reset(struct pil_desc *pil)
 {
 	struct q6v5_data *drv = container_of(pil, struct q6v5_data, desc);
-	u32 encryption_status;
 	int ret;
 
-
-	if (!pil->minidump_ss)
+	if (!pil->minidump)
 		return 0;
-
-	encryption_status = pil->minidump_ss->encryption_status;
-
-	if ((pil->minidump_ss->md_ss_enable_status != MD_SS_ENABLED) ||
-		encryption_status == MD_SS_ENCR_NOTREQ)
-		return 0;
+	if (pil->minidump) {
+		if (pil->minidump->md_ss_enable_status != MD_SS_ENABLED)
+			return 0;
+	}
 
 	/*
 	 * Bring subsystem out of reset and enable required
@@ -818,7 +805,7 @@ int pil_mss_debug_reset(struct pil_desc *pil)
 	if (ret)
 		return ret;
 
-	if (pil->minidump_ss) {
+	if (pil->minidump) {
 		writel_relaxed(0x1, drv->reg_base + QDSP6SS_NMI_CFG);
 		/* Let write complete before proceeding */
 		mb();
@@ -840,8 +827,8 @@ int pil_mss_debug_reset(struct pil_desc *pil)
 	 * complete before returning
 	 */
 	pr_info("Minidump: waiting encryption to complete\n");
-	msleep(13000);
-	if (pil->minidump_ss) {
+	msleep(10000);
+	if (pil->minidump) {
 		writel_relaxed(0x2, drv->reg_base + QDSP6SS_NMI_CFG);
 		/* Let write complete before proceeding */
 		mb();

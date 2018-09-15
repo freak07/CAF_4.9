@@ -811,7 +811,7 @@ error:
 
 static int __ipa_create_flt_entry(struct ipa3_flt_entry **entry,
 		const struct ipa_flt_rule *rule, struct ipa3_rt_tbl *rt_tbl,
-		struct ipa3_flt_tbl *tbl, bool user)
+		struct ipa3_flt_tbl *tbl)
 {
 	int id;
 
@@ -836,7 +836,6 @@ static int __ipa_create_flt_entry(struct ipa3_flt_entry **entry,
 		}
 	}
 	(*entry)->rule_id = id;
-	(*entry)->ipacm_installed = user;
 
 	return 0;
 
@@ -874,7 +873,7 @@ ipa_insert_failed:
 
 static int __ipa_add_flt_rule(struct ipa3_flt_tbl *tbl, enum ipa_ip_type ip,
 			      const struct ipa_flt_rule *rule, u8 add_rear,
-			      u32 *rule_hdl, bool user)
+			      u32 *rule_hdl)
 {
 	struct ipa3_flt_entry *entry;
 	struct ipa3_rt_tbl *rt_tbl = NULL;
@@ -882,7 +881,7 @@ static int __ipa_add_flt_rule(struct ipa3_flt_tbl *tbl, enum ipa_ip_type ip,
 	if (__ipa_validate_flt_rule(rule, &rt_tbl, ip))
 		goto error;
 
-	if (__ipa_create_flt_entry(&entry, rule, rt_tbl, tbl, user))
+	if (__ipa_create_flt_entry(&entry, rule, rt_tbl, tbl))
 		goto error;
 
 	if (add_rear) {
@@ -932,7 +931,7 @@ static int __ipa_add_flt_rule_after(struct ipa3_flt_tbl *tbl,
 	if (__ipa_validate_flt_rule(rule, &rt_tbl, ip))
 		goto error;
 
-	if (__ipa_create_flt_entry(&entry, rule, rt_tbl, tbl, true))
+	if (__ipa_create_flt_entry(&entry, rule, rt_tbl, tbl))
 		goto error;
 
 	list_add(&entry->link, &((*add_after_entry)->link));
@@ -1014,11 +1013,40 @@ static int __ipa_mdfy_flt_rule(struct ipa_flt_rule_mdfy *frule,
 		goto error;
 	}
 
-	if (__ipa_validate_flt_rule(&frule->rule, &rt_tbl, ip))
-		goto error;
-
 	if (entry->rt_tbl)
 		entry->rt_tbl->ref_cnt--;
+
+	if (frule->rule.action != IPA_PASS_TO_EXCEPTION) {
+		if (!frule->rule.eq_attrib_type) {
+			if (!frule->rule.rt_tbl_hdl) {
+				IPAERR_RL("invalid RT tbl\n");
+				goto error;
+			}
+
+			rt_tbl = ipa3_id_find(frule->rule.rt_tbl_hdl);
+			if (rt_tbl == NULL) {
+				IPAERR_RL("RT tbl not found\n");
+				goto error;
+			}
+
+			if (rt_tbl->cookie != IPA_RT_TBL_COOKIE) {
+				IPAERR_RL("RT table cookie is invalid\n");
+				goto error;
+			}
+		} else {
+			if (frule->rule.rt_tbl_idx > ((ip == IPA_IP_v4) ?
+				IPA_MEM_PART(v4_modem_rt_index_hi) :
+				IPA_MEM_PART(v6_modem_rt_index_hi))) {
+				IPAERR_RL("invalid RT tbl\n");
+				goto error;
+			}
+		}
+	} else {
+		if (frule->rule.rt_tbl_idx > 0) {
+			IPAERR_RL("invalid RT tbl\n");
+			goto error;
+		}
+	}
 
 	entry->rule = frule->rule;
 	entry->rt_tbl = rt_tbl;
@@ -1053,7 +1081,7 @@ static int __ipa_add_flt_get_ep_idx(enum ipa_client_type ep, int *ipa_ep_idx)
 
 static int __ipa_add_ep_flt_rule(enum ipa_ip_type ip, enum ipa_client_type ep,
 				 const struct ipa_flt_rule *rule, u8 add_rear,
-				 u32 *rule_hdl, bool user)
+				 u32 *rule_hdl)
 {
 	struct ipa3_flt_tbl *tbl;
 	int ipa_ep_idx;
@@ -1071,33 +1099,18 @@ static int __ipa_add_ep_flt_rule(enum ipa_ip_type ip, enum ipa_client_type ep,
 	tbl = &ipa3_ctx->flt_tbl[ipa_ep_idx][ip];
 	IPADBG_LOW("add ep flt rule ip=%d ep=%d\n", ip, ep);
 
-	return __ipa_add_flt_rule(tbl, ip, rule, add_rear, rule_hdl, user);
+	return __ipa_add_flt_rule(tbl, ip, rule, add_rear, rule_hdl);
 }
 
 /**
  * ipa3_add_flt_rule() - Add the specified filtering rules to SW and optionally
  * commit to IPA HW
- * @rules:	[inout] set of filtering rules to add
  *
  * Returns:	0 on success, negative on failure
  *
  * Note:	Should not be called from atomic context
  */
 int ipa3_add_flt_rule(struct ipa_ioc_add_flt_rule *rules)
-{
-	return ipa3_add_flt_rule_usr(rules, false);
-}
-/**
- * ipa3_add_flt_rule_usr() - Add the specified filtering rules to
- * SW and optionally commit to IPA HW
- * @rules:	[inout] set of filtering rules to add
- * @user_only:	[in] indicate rules installed by userspace
- *
- * Returns:	0 on success, negative on failure
- *
- * Note:	Should not be called from atomic context
- */
-int ipa3_add_flt_rule_usr(struct ipa_ioc_add_flt_rule *rules, bool user_only)
 {
 	int i;
 	int result;
@@ -1114,8 +1127,7 @@ int ipa3_add_flt_rule_usr(struct ipa_ioc_add_flt_rule *rules, bool user_only)
 			result = __ipa_add_ep_flt_rule(rules->ip, rules->ep,
 					&rules->rules[i].rule,
 					rules->rules[i].at_rear,
-					&rules->rules[i].flt_rule_hdl,
-					user_only);
+					&rules->rules[i].flt_rule_hdl);
 		else
 			result = -1;
 
@@ -1362,20 +1374,18 @@ bail:
  * ipa3_reset_flt() - Reset the current SW filtering table of specified type
  * (does not commit to HW)
  * @ip:	[in] the family of routing tables
- * @user_only:	[in] indicate rules deleted by userspace
  *
  * Returns:	0 on success, negative on failure
  *
  * Note:	Should not be called from atomic context
  */
-int ipa3_reset_flt(enum ipa_ip_type ip, bool user_only)
+int ipa3_reset_flt(enum ipa_ip_type ip)
 {
 	struct ipa3_flt_tbl *tbl;
 	struct ipa3_flt_entry *entry;
 	struct ipa3_flt_entry *next;
 	int i;
 	int id;
-	int rule_id;
 
 	if (ip >= IPA_IP_MAX) {
 		IPAERR_RL("bad parm\n");
@@ -1395,39 +1405,25 @@ int ipa3_reset_flt(enum ipa_ip_type ip, bool user_only)
 				mutex_unlock(&ipa3_ctx->lock);
 				return -EFAULT;
 			}
+			list_del(&entry->link);
+			entry->tbl->rule_cnt--;
+			if (entry->rt_tbl)
+				entry->rt_tbl->ref_cnt--;
+			/* if rule id was allocated from idr, remove it */
+			if ((entry->rule_id < ipahal_get_rule_id_hi_bit()) &&
+				(entry->rule_id >= ipahal_get_low_rule_id()))
+				idr_remove(entry->tbl->rule_ids,
+					entry->rule_id);
+			entry->cookie = 0;
+			id = entry->id;
+			kmem_cache_free(ipa3_ctx->flt_rule_cache, entry);
 
-			if (!user_only ||
-					entry->ipacm_installed) {
-				list_del(&entry->link);
-				entry->tbl->rule_cnt--;
-				if (entry->rt_tbl)
-					entry->rt_tbl->ref_cnt--;
-				/* if rule id was allocated from idr, remove */
-				rule_id = entry->rule_id;
-				id = entry->id;
-				if ((rule_id < ipahal_get_rule_id_hi_bit()) &&
-					(rule_id >= ipahal_get_low_rule_id()))
-					idr_remove(entry->tbl->rule_ids,
-						rule_id);
-				entry->cookie = 0;
-				kmem_cache_free(ipa3_ctx->flt_rule_cache,
-								entry);
-
-				/* remove the handle from the database */
-				ipa3_id_remove(id);
-			}
+			/* remove the handle from the database */
+			ipa3_id_remove(id);
 		}
 	}
-
-	/* commit the change to IPA-HW */
-	if (ipa3_ctx->ctrl->ipa3_commit_flt(IPA_IP_v4) ||
-		ipa3_ctx->ctrl->ipa3_commit_flt(IPA_IP_v6)) {
-		IPAERR("fail to commit flt-rule\n");
-		WARN_ON_RATELIMIT_IPA(1);
-		mutex_unlock(&ipa3_ctx->lock);
-		return -EPERM;
-	}
 	mutex_unlock(&ipa3_ctx->lock);
+
 	return 0;
 }
 
@@ -1449,14 +1445,14 @@ void ipa3_install_dflt_flt_rules(u32 ipa_ep_idx)
 	tbl = &ipa3_ctx->flt_tbl[ipa_ep_idx][IPA_IP_v4];
 	rule.action = IPA_PASS_TO_EXCEPTION;
 	__ipa_add_flt_rule(tbl, IPA_IP_v4, &rule, true,
-			&ep->dflt_flt4_rule_hdl, false);
+			&ep->dflt_flt4_rule_hdl);
 	ipa3_ctx->ctrl->ipa3_commit_flt(IPA_IP_v4);
 	tbl->sticky_rear = true;
 
 	tbl = &ipa3_ctx->flt_tbl[ipa_ep_idx][IPA_IP_v6];
 	rule.action = IPA_PASS_TO_EXCEPTION;
 	__ipa_add_flt_rule(tbl, IPA_IP_v6, &rule, true,
-			&ep->dflt_flt6_rule_hdl, false);
+			&ep->dflt_flt6_rule_hdl);
 	ipa3_ctx->ctrl->ipa3_commit_flt(IPA_IP_v6);
 	tbl->sticky_rear = true;
 	mutex_unlock(&ipa3_ctx->lock);

@@ -337,8 +337,7 @@ static void ccid_bulk_complete_out(struct usb_ep *ep, struct usb_request *req)
 }
 
 static struct usb_request *
-ccid_request_alloc(struct usb_ep *ep, size_t len, size_t extra_buf_alloc,
-							gfp_t kmalloc_flags)
+ccid_request_alloc(struct usb_ep *ep, size_t len, gfp_t kmalloc_flags)
 {
 	struct usb_request *req;
 
@@ -346,7 +345,7 @@ ccid_request_alloc(struct usb_ep *ep, size_t len, size_t extra_buf_alloc,
 
 	if (req != NULL) {
 		req->length = len;
-		req->buf = kmalloc(len + extra_buf_alloc, kmalloc_flags);
+		req->buf = kmalloc(len, kmalloc_flags);
 		if (req->buf == NULL) {
 			usb_ep_free_request(ep, req);
 			req = NULL;
@@ -468,8 +467,7 @@ ccid_function_set_alt(struct usb_function *f, unsigned int intf,
 	int i;
 
 	ccid_dev->notify_req = ccid_request_alloc(ccid_dev->notify,
-			sizeof(struct usb_ccid_notification),
-			cdev->gadget->extra_buf_alloc, GFP_ATOMIC);
+			sizeof(struct usb_ccid_notification), GFP_ATOMIC);
 	if (IS_ERR(ccid_dev->notify_req)) {
 		pr_err("%s: unable to allocate memory for notify req\n",
 				__func__);
@@ -480,7 +478,7 @@ ccid_function_set_alt(struct usb_function *f, unsigned int intf,
 
 	/* now allocate requests for our endpoints */
 	req = ccid_request_alloc(ccid_dev->out, BULK_OUT_BUFFER_SIZE,
-							0, GFP_ATOMIC);
+							GFP_ATOMIC);
 	if (IS_ERR(req)) {
 		pr_err("%s: unable to allocate memory for out req\n",
 				__func__);
@@ -493,7 +491,7 @@ ccid_function_set_alt(struct usb_function *f, unsigned int intf,
 
 	for (i = 0; i < TX_REQ_MAX; i++) {
 		req = ccid_request_alloc(ccid_dev->in, BULK_IN_BUFFER_SIZE,
-				cdev->gadget->extra_buf_alloc, GFP_ATOMIC);
+				GFP_ATOMIC);
 		if (IS_ERR(req)) {
 			pr_err("%s: unable to allocate memory for in req\n",
 					__func__);
@@ -1037,6 +1035,9 @@ static int ccid_bind_config(struct f_ccid *ccid_dev)
 	pr_debug("ccid_bind_config\n");
 
 	ccid_dev->function.name = FUNCTION_NAME;
+	ccid_dev->function.fs_descriptors = ccid_fs_descs;
+	ccid_dev->function.hs_descriptors = ccid_hs_descs;
+	ccid_dev->function.ss_descriptors = ccid_ss_descs;
 	ccid_dev->function.bind = ccid_function_bind;
 	ccid_dev->function.unbind = ccid_function_unbind;
 	ccid_dev->function.set_alt = ccid_function_set_alt;

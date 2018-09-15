@@ -10,4 +10,3 @@ arch/arm/boot/zImage
 vmlinux
 System.map
 "
-STOP_SHIP_TRACEPRINTK=1

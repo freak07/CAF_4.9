@@ -73,9 +73,6 @@ const char *ipa3_event_name[] = {
 	__stringify(DEL_L2TP_VLAN_MAPPING),
 	__stringify(IPA_PER_CLIENT_STATS_CONNECT_EVENT),
 	__stringify(IPA_PER_CLIENT_STATS_DISCONNECT_EVENT),
-	__stringify(ADD_BRIDGE_VLAN_MAPPING),
-	__stringify(DEL_BRIDGE_VLAN_MAPPING),
-	__stringify(WLAN_FWR_SSR_BEFORE_SHUTDOWN),
 };
 
 const char *ipa3_hdr_l2_type_name[] = {
@@ -531,15 +528,6 @@ static int ipa3_attrib_dump(struct ipa_rule_attrib *attrib,
 
 	if (attrib->attrib_mask & IPA_FLT_TCP_SYN_L2TP)
 		pr_err("tcp syn l2tp ");
-
-	if (attrib->attrib_mask & IPA_FLT_L2TP_INNER_IP_TYPE)
-		pr_err("l2tp inner ip type: %d ", attrib->type);
-
-	if (attrib->attrib_mask & IPA_FLT_L2TP_INNER_IPV4_DST_ADDR) {
-		addr[0] = htonl(attrib->u.v4.dst_addr);
-		mask[0] = htonl(attrib->u.v4.dst_addr_mask);
-		pr_err("dst_addr:%pI4 dst_addr_mask:%pI4 ", addr, mask);
-	}
 
 	pr_err("\n");
 	return 0;
@@ -1572,7 +1560,6 @@ static int ipa3_read_table(
 	char *entry;
 	size_t entry_size;
 	bool entry_zeroed;
-	bool entry_valid;
 	u32 i, num_entries = 0, id = *rule_id, pos = 0;
 
 	IPADBG("\n");
@@ -1594,33 +1581,20 @@ static int ipa3_read_table(
 			&entry_zeroed);
 		if (result) {
 			IPAERR(
-				"Failed to determine whether the %s entry is definitely zero\n"
-					, ipahal_nat_type_str(nat_type));
+				"Failed to determine whether the %s entry is definitely zero",
+				ipahal_nat_type_str(nat_type));
 			goto bail;
 		}
 		if (entry_zeroed)
 			continue;
 
-		result = ipahal_nat_is_entry_valid(nat_type, entry,
-			&entry_valid);
-		if (result) {
-			IPAERR(
-				"Failed to determine whether the %s entry is valid\n"
-					, ipahal_nat_type_str(nat_type));
-			goto bail;
-		}
-
-		if (entry_valid) {
-			++num_entries;
-			pos += scnprintf(buff + pos, buff_size - pos,
-				"\tEntry_Index=%d\n", id);
-		} else {
-			pos += scnprintf(buff + pos, buff_size - pos,
-				"\tEntry_Index=%d - Invalid Entry\n", id);
-		}
+		pos += scnprintf(buff + pos, buff_size - pos,
+			"\tEntry_Index=%d\n", id);
 
 		pos += ipahal_nat_stringify_entry(nat_type, entry,
 			buff + pos, buff_size - pos);
+
+		++num_entries;
 	}
 
 	if (num_entries)
@@ -1706,7 +1680,6 @@ static int ipa3_read_pdn_table(char *buff, u32 buff_size)
 	char *pdn_entry;
 	size_t pdn_entry_size;
 	bool entry_zeroed;
-	bool entry_valid;
 	u32 pos = 0;
 
 	IPADBG("\n");
@@ -1724,25 +1697,13 @@ static int ipa3_read_pdn_table(char *buff, u32 buff_size)
 			pdn_entry, &entry_zeroed);
 		if (result) {
 			IPAERR(
-				"Failed to determine whether the PDN entry is definitely zero\n");
+				"Failed to determine whether the PDN entry is definitely zero");
 			goto bail;
 		}
 		if (entry_zeroed)
 			continue;
 
-		result = ipahal_nat_is_entry_valid(IPAHAL_NAT_IPV4_PDN,
-			pdn_entry, &entry_valid);
-		if (result) {
-			IPAERR(
-				"Failed to determine whether the PDN entry is valid\n");
-			goto bail;
-		}
-		if (entry_valid)
-			pos += scnprintf(buff + pos, buff_size - pos,
-				"PDN %d: ", i);
-		else
-			pos += scnprintf(buff + pos, buff_size - pos,
-				"PDN %d - Invalid: ", i);
+		pos += scnprintf(buff + pos, buff_size - pos, "PDN %d: ", i);
 
 		pos += ipahal_nat_stringify_entry(IPAHAL_NAT_IPV4_PDN,
 			pdn_entry, buff + pos, buff_size - pos);
@@ -1949,16 +1910,6 @@ ret:
 	return simple_read_from_buffer(ubuf, count, ppos, dbg_buff, cnt);
 }
 
-static ssize_t ipa3_read_ipahal_regs(struct file *file, char __user *ubuf,
-		size_t count, loff_t *ppos)
-{
-	IPA_ACTIVE_CLIENTS_INC_SIMPLE();
-	ipahal_print_all_regs(true);
-	IPA_ACTIVE_CLIENTS_DEC_SIMPLE();
-
-	return 0;
-}
-
 static void ipa_dump_status(struct ipahal_pkt_status *status)
 {
 	IPA_DUMP_STATUS_FIELD(status_opcode);
@@ -2090,7 +2041,7 @@ static ssize_t ipa3_enable_ipc_low(struct file *file,
 					"ipa_low", 0);
 		}
 			if (ipa_ipc_low_buff == NULL)
-				IPADBG("failed to get logbuf_low\n");
+				IPAERR("failed to get logbuf_low\n");
 		ipa3_ctx->logbuf_low = ipa_ipc_low_buff;
 	} else {
 		ipa3_ctx->logbuf_low = NULL;
@@ -2225,10 +2176,6 @@ static const struct ipa3_debugfs_file debugfs_files[] = {
 		"enable_low_prio_print", IPA_WRITE_ONLY_MODE, NULL, {
 			.write = ipa3_enable_ipc_low,
 		}
-	}, {
-		"ipa_dump_regs", IPA_READ_ONLY_MODE, NULL, {
-			.read = ipa3_read_ipahal_regs,
-		}
 	}
 };
 
@@ -2291,13 +2238,6 @@ void ipa3_debugfs_init(void)
 			&ipa3_ctx->ctrl->clock_scaling_bw_threshold_turbo);
 	if (!file) {
 		IPAERR("could not create bw_threshold_turbo_mbps\n");
-		goto fail;
-	}
-
-	file = debugfs_create_u32("clk_rate", IPA_READ_ONLY_MODE,
-		dent, &ipa3_ctx->curr_ipa_clk_rate);
-	if (!file) {
-		IPAERR("could not create clk_rate file\n");
 		goto fail;
 	}
 

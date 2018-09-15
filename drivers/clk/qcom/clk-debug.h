@@ -44,7 +44,6 @@ enum debug_cc {
 	GPU_CC,
 	VIDEO_CC,
 	CPU,
-	MAX_NUM_CC,
 };
 
 /**

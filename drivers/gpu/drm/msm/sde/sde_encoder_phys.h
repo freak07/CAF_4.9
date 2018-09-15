@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2015-2017 The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -194,9 +194,6 @@ struct sde_encoder_phys_ops {
  * @INTR_IDX_PINGPONG: Pingpong done unterrupt for cmd mode panel
  * @INTR_IDX_UNDERRUN: Underrun unterrupt for video and cmd mode panel
  * @INTR_IDX_RDPTR:    Readpointer done unterrupt for cmd mode panel
- * @INTR_IDX_WB_DONE:  Writeback done interrupt for WB
- * @INTR_IDX_PP2_OVFL: Pingpong overflow interrupt on PP2 for Concurrent WB
- * @INTR_IDX_PP2_OVFL: Pingpong overflow interrupt on PP3 for Concurrent WB
  * @INTR_IDX_AUTOREFRESH_DONE:  Autorefresh done for cmd mode panel meaning
  *                              autorefresh has triggered a double buffer flip
  */
@@ -207,9 +204,6 @@ enum sde_intr_idx {
 	INTR_IDX_CTL_START,
 	INTR_IDX_RDPTR,
 	INTR_IDX_AUTOREFRESH_DONE,
-	INTR_IDX_WB_DONE,
-	INTR_IDX_PP2_OVFL,
-	INTR_IDX_PP3_OVFL,
 	INTR_IDX_MAX,
 };
 
@@ -269,9 +263,6 @@ struct sde_encoder_irq {
  * @irq:			IRQ tracking structures
  * @cont_splash_single_flush	Variable to check if single flush is enabled.
  * @cont_splash_settings	Variable to store continuous splash settings.
- * @in_clone_mode		Indicates if encoder is in clone mode ref@CWB
- * @vfp_cached:			cached vertical front porch to be used for
- *				programming ROT and MDP fetch start
  */
 struct sde_encoder_phys {
 	struct drm_encoder *parent;
@@ -291,7 +282,6 @@ struct sde_encoder_phys {
 	enum msm_display_compression_type comp_type;
 	spinlock_t *enc_spinlock;
 	enum sde_enc_enable_state enable_state;
-	struct mutex *vblank_ctl_lock;
 	atomic_t vblank_refcount;
 	atomic_t vsync_cnt;
 	atomic_t underrun_cnt;
@@ -302,8 +292,6 @@ struct sde_encoder_phys {
 	struct sde_encoder_irq irq[INTR_IDX_MAX];
 	u32 cont_splash_single_flush;
 	bool cont_splash_settings;
-	bool in_clone_mode;
-	int vfp_cached;
 };
 
 static inline int sde_encoder_phys_inc_pending(struct sde_encoder_phys *phys)
@@ -376,6 +364,7 @@ struct sde_encoder_phys_cmd {
  *	writeback specific operations
  * @base:		Baseclass physical encoder structure
  * @hw_wb:		Hardware interface to the wb registers
+ * @irq_idx:		IRQ interface lookup index
  * @wbdone_timeout:	Timeout value for writeback done in msec
  * @bypass_irqreg:	Bypass irq register/unregister if non-zero
  * @wbdone_complete:	for wbdone irq synchronization
@@ -399,6 +388,8 @@ struct sde_encoder_phys_cmd {
 struct sde_encoder_phys_wb {
 	struct sde_encoder_phys base;
 	struct sde_hw_wb *hw_wb;
+	int irq_idx;
+	struct sde_irq_callback irq_cb;
 	u32 wbdone_timeout;
 	u32 bypass_irqreg;
 	struct completion wbdone_complete;
@@ -440,7 +431,6 @@ struct sde_enc_phys_init_params {
 	enum sde_wb wb_idx;
 	enum msm_display_compression_type comp_type;
 	spinlock_t *enc_spinlock;
-	struct mutex *vblank_ctl_lock;
 };
 
 /**

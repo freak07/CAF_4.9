@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2018, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -10,8 +10,6 @@
  * GNU General Public License for more details.
  *
  */
-
-#define pr_fmt(fmt) "%s: " fmt, __func__
 
 #include <linux/init.h>
 #include <linux/io.h>
@@ -38,7 +36,6 @@ struct msm_rpmstats_record {
 struct msm_rpmstats_platform_data {
 	phys_addr_t phys_addr_base;
 	u32 phys_size;
-	u32 num_records;
 };
 
 struct msm_rpmstats_private_data {
@@ -46,7 +43,7 @@ struct msm_rpmstats_private_data {
 	u32 num_records;
 	u32 read_idx;
 	u32 len;
-	char buf[480];
+	char buf[320];
 	struct msm_rpmstats_platform_data *platform_data;
 };
 
@@ -64,7 +61,6 @@ struct msm_rpm_stats_data {
 };
 
 struct msm_rpmstats_kobj_attr {
-	struct kobject *kobj;
 	struct kobj_attribute ka;
 	struct msm_rpmstats_platform_data *pd;
 };
@@ -179,32 +175,29 @@ static ssize_t rpmstats_show(struct kobject *kobj,
 {
 	struct msm_rpmstats_private_data prvdata;
 	struct msm_rpmstats_platform_data *pdata = NULL;
-	ssize_t length;
 
 	pdata = GET_PDATA_OF_ATTR(attr);
 
 	prvdata.reg_base = ioremap_nocache(pdata->phys_addr_base,
 					pdata->phys_size);
 	if (!prvdata.reg_base) {
-		pr_err("ERROR could not ioremap start=%pa, len=%u\n",
-				&pdata->phys_addr_base, pdata->phys_size);
+		pr_err("%s: ERROR could not ioremap start=%pa, len=%u\n",
+			__func__, &pdata->phys_addr_base,
+			pdata->phys_size);
 		return -EBUSY;
 	}
 
 	prvdata.read_idx = prvdata.len = 0;
 	prvdata.platform_data = pdata;
-	prvdata.num_records = pdata->num_records;
+	prvdata.num_records = RPM_STATS_NUM_REC;
 
 	if (prvdata.read_idx < prvdata.num_records)
 		prvdata.len = msm_rpmstats_copy_stats(&prvdata);
 
-	length = scnprintf(buf, prvdata.len, "%s", prvdata.buf);
-	iounmap(prvdata.reg_base);
-	return length;
+	return snprintf(buf, prvdata.len, "%s", prvdata.buf);
 }
 
-static int msm_rpmstats_create_sysfs(struct platform_device *pdev,
-				struct msm_rpmstats_platform_data *pd)
+static int msm_rpmstats_create_sysfs(struct msm_rpmstats_platform_data *pd)
 {
 	struct kobject *rpmstats_kobj = NULL;
 	struct msm_rpmstats_kobj_attr *rpms_ka = NULL;
@@ -212,7 +205,7 @@ static int msm_rpmstats_create_sysfs(struct platform_device *pdev,
 
 	rpmstats_kobj = kobject_create_and_add("system_sleep", power_kobj);
 	if (!rpmstats_kobj) {
-		pr_err("Cannot create rpmstats kobject\n");
+		pr_err("%s: Cannot create rpmstats kobject\n", __func__);
 		ret = -ENOMEM;
 		goto fail;
 	}
@@ -224,8 +217,6 @@ static int msm_rpmstats_create_sysfs(struct platform_device *pdev,
 		goto fail;
 	}
 
-	rpms_ka->kobj = rpmstats_kobj;
-
 	sysfs_attr_init(&rpms_ka->ka.attr);
 	rpms_ka->pd = pd;
 	rpms_ka->ka.attr.mode = 0444;
@@ -234,7 +225,6 @@ static int msm_rpmstats_create_sysfs(struct platform_device *pdev,
 	rpms_ka->ka.store = NULL;
 
 	ret = sysfs_create_file(rpmstats_kobj, &rpms_ka->ka.attr);
-	platform_set_drvdata(pdev, rpms_ka);
 
 fail:
 	return ret;
@@ -243,27 +233,28 @@ fail:
 static int msm_rpmstats_probe(struct platform_device *pdev)
 {
 	struct msm_rpmstats_platform_data *pdata;
+	struct msm_rpmstats_platform_data *pd;
 	struct resource *res = NULL, *offset = NULL;
 	u32 offset_addr = 0;
 	void __iomem *phys_ptr = NULL;
-	char *key;
 
 	pdata = devm_kzalloc(&pdev->dev, sizeof(*pdata), GFP_KERNEL);
 	if (!pdata)
 		return -ENOMEM;
 
-	key = "phys_addr_base";
-	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, key);
+	res = platform_get_resource_byname(pdev, IORESOURCE_MEM,
+							"phys_addr_base");
 	if (!res)
 		return -EINVAL;
 
-	key = "offset_addr";
-	offset = platform_get_resource_byname(pdev, IORESOURCE_MEM, key);
+	offset = platform_get_resource_byname(pdev, IORESOURCE_MEM,
+							"offset_addr");
 	if (offset) {
 		/* Remap the rpm-stats pointer */
 		phys_ptr = ioremap_nocache(offset->start, SZ_4);
 		if (!phys_ptr) {
-			pr_err("Failed to ioremap offset address\n");
+			pr_err("%s: Failed to ioremap address: %x\n",
+					__func__, offset_addr);
 			return -ENODEV;
 		}
 		offset_addr = readl_relaxed(phys_ptr);
@@ -273,32 +264,13 @@ static int msm_rpmstats_probe(struct platform_device *pdev)
 	pdata->phys_addr_base  = res->start + offset_addr;
 	pdata->phys_size = resource_size(res);
 
-	key = "qcom,num-records";
-	if (of_property_read_u32(pdev->dev.of_node, key, &pdata->num_records))
-		pdata->num_records = RPM_STATS_NUM_REC;
+	if (pdev->dev.platform_data)
+		pd = pdev->dev.platform_data;
 
-	msm_rpmstats_create_sysfs(pdev, pdata);
-
-	return 0;
-}
-
-static int msm_rpmstats_remove(struct platform_device *pdev)
-{
-	struct msm_rpmstats_kobj_attr *rpms_ka;
-
-	if (!pdev)
-		return -EINVAL;
-
-	rpms_ka = (struct msm_rpmstats_kobj_attr *)
-			platform_get_drvdata(pdev);
-
-	sysfs_remove_file(rpms_ka->kobj, &rpms_ka->ka.attr);
-	kobject_put(rpms_ka->kobj);
-	platform_set_drvdata(pdev, NULL);
+	msm_rpmstats_create_sysfs(pdata);
 
 	return 0;
 }
-
 
 static const struct of_device_id rpm_stats_table[] = {
 	{ .compatible = "qcom,rpm-stats" },
@@ -307,7 +279,6 @@ static const struct of_device_id rpm_stats_table[] = {
 
 static struct platform_driver msm_rpmstats_driver = {
 	.probe = msm_rpmstats_probe,
-	.remove = msm_rpmstats_remove,
 	.driver = {
 		.name = "msm_rpm_stat",
 		.owner = THIS_MODULE,

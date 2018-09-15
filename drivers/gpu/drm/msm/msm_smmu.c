@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2018, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2015-2017, The Linux Foundation. All rights reserved.
  * Copyright (C) 2013 Red Hat
  * Author: Rob Clark <robdclark@gmail.com>
  *
@@ -321,7 +321,7 @@ static int msm_smmu_map_dma_buf(struct msm_mmu *mmu, struct sg_table *sgt,
 		DRM_DEBUG("%pad/0x%x/0x%x/0x%lx\n", &sgt->sgl->dma_address,
 				sgt->sgl->dma_length, dir, attrs);
 		SDE_EVT32(sgt->sgl->dma_address, sgt->sgl->dma_length,
-				dir, attrs, client->secure);
+				dir, attrs);
 	}
 
 	return 0;
@@ -342,8 +342,7 @@ static void msm_smmu_unmap_dma_buf(struct msm_mmu *mmu, struct sg_table *sgt,
 	if (sgt && sgt->sgl) {
 		DRM_DEBUG("%pad/0x%x/0x%x\n", &sgt->sgl->dma_address,
 				sgt->sgl->dma_length, dir);
-		SDE_EVT32(sgt->sgl->dma_address, sgt->sgl->dma_length, dir,
-			client->secure);
+		SDE_EVT32(sgt->sgl->dma_address, sgt->sgl->dma_length, dir);
 	}
 
 	msm_dma_unmap_sg(client->dev, sgt->sgl, sgt->nents, dir, dma_buf);
@@ -636,7 +635,6 @@ static struct platform_driver msm_smmu_driver = {
 	.driver = {
 		.name = "msmdrm_smmu",
 		.of_match_table = msm_smmu_dt_match,
-		.suppress_bind_attrs = true,
 	},
 };
 

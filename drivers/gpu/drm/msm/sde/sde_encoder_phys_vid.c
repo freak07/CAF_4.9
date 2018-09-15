@@ -40,20 +40,6 @@
 #define POLL_TIME_USEC_FOR_LN_CNT 500
 #define MAX_POLL_CNT 10
 
-static bool _sde_encoder_phys_is_ppsplit(struct sde_encoder_phys *phys_enc)
-{
-	enum sde_rm_topology_name topology;
-
-	if (!phys_enc)
-		return false;
-
-	topology = sde_connector_get_topology_name(phys_enc->connector);
-	if (topology == SDE_RM_TOPOLOGY_PPSPLIT)
-		return true;
-
-	return false;
-}
-
 static bool sde_encoder_phys_vid_is_master(
 		struct sde_encoder_phys *phys_enc)
 {
@@ -115,7 +101,6 @@ static void drm_mode_to_intf_timing_params(
 	timing->border_clr = 0;
 	timing->underflow_clr = 0xff;
 	timing->hsync_skew = mode->hskew;
-	timing->v_front_porch_fixed = vid_enc->base.vfp_cached;
 
 	/* DSI controller cannot handle active-low sync signals. */
 	if (vid_enc->hw_intf->cap->type == INTF_DSI) {
@@ -145,16 +130,12 @@ static inline u32 get_horizontal_total(const struct intf_timing_params *timing)
 	return active + inactive;
 }
 
-static inline u32 get_vertical_total(const struct intf_timing_params *timing,
-	bool use_fixed_vfp)
+static inline u32 get_vertical_total(const struct intf_timing_params *timing)
 {
-	u32 inactive;
 	u32 active = timing->yres;
-	u32 v_front_porch = use_fixed_vfp ?
-		timing->v_front_porch_fixed : timing->v_front_porch;
-
-	inactive = timing->v_back_porch + v_front_porch +
-			    timing->vsync_pulse_width;
+	u32 inactive =
+	    timing->v_back_porch + timing->v_front_porch +
+	    timing->vsync_pulse_width;
 	return active + inactive;
 }
 
@@ -174,8 +155,7 @@ static inline u32 get_vertical_total(const struct intf_timing_params *timing,
  */
 static u32 programmable_fetch_get_num_lines(
 		struct sde_encoder_phys_vid *vid_enc,
-		const struct intf_timing_params *timing,
-		bool use_fixed_vfp)
+		const struct intf_timing_params *timing)
 {
 	u32 worst_case_needed_lines =
 	    vid_enc->hw_intf->cap->prog_fetch_lines_worst_case;
@@ -183,21 +163,19 @@ static u32 programmable_fetch_get_num_lines(
 	    timing->v_back_porch + timing->vsync_pulse_width;
 	u32 needed_vfp_lines = worst_case_needed_lines - start_of_frame_lines;
 	u32 actual_vfp_lines = 0;
-	u32 v_front_porch = use_fixed_vfp ?
-		timing->v_front_porch_fixed : timing->v_front_porch;
 
 	/* Fetch must be outside active lines, otherwise undefined. */
 	if (start_of_frame_lines >= worst_case_needed_lines) {
 		SDE_DEBUG_VIDENC(vid_enc,
 				"prog fetch is not needed, large vbp+vsw\n");
 		actual_vfp_lines = 0;
-	} else if (v_front_porch < needed_vfp_lines) {
+	} else if (timing->v_front_porch < needed_vfp_lines) {
 		/* Warn fetch needed, but not enough porch in panel config */
 		pr_warn_once
 			("low vbp+vfp may lead to perf issues in some cases\n");
 		SDE_DEBUG_VIDENC(vid_enc,
 				"less vfp than fetch req, using entire vfp\n");
-		actual_vfp_lines = v_front_porch;
+		actual_vfp_lines = timing->v_front_porch;
 	} else {
 		SDE_DEBUG_VIDENC(vid_enc, "room in vfp for needed prefetch\n");
 		actual_vfp_lines = needed_vfp_lines;
@@ -205,7 +183,7 @@ static u32 programmable_fetch_get_num_lines(
 
 	SDE_DEBUG_VIDENC(vid_enc,
 		"v_front_porch %u v_back_porch %u vsync_pulse_width %u\n",
-		v_front_porch, timing->v_back_porch,
+		timing->v_front_porch, timing->v_back_porch,
 		timing->vsync_pulse_width);
 	SDE_DEBUG_VIDENC(vid_enc,
 		"wc_lines %u needed_vfp_lines %u actual_vfp_lines %u\n",
@@ -239,10 +217,9 @@ static void programmable_fetch_config(struct sde_encoder_phys *phys_enc,
 	if (WARN_ON_ONCE(!vid_enc->hw_intf->ops.setup_prg_fetch))
 		return;
 
-	vfp_fetch_lines = programmable_fetch_get_num_lines(vid_enc,
-							   timing, true);
+	vfp_fetch_lines = programmable_fetch_get_num_lines(vid_enc, timing);
 	if (vfp_fetch_lines) {
-		vert_total = get_vertical_total(timing, true);
+		vert_total = get_vertical_total(timing);
 		horiz_total = get_horizontal_total(timing);
 		vfp_fetch_start_vsync_counter =
 		    (vert_total - vfp_fetch_lines) * horiz_total + 1;
@@ -293,10 +270,9 @@ static void programmable_rot_fetch_config(struct sde_encoder_phys *phys_enc,
 		return;
 
 	timing = &vid_enc->timing_params;
-	vfp_fetch_lines = programmable_fetch_get_num_lines(vid_enc,
-							   timing, true);
+	vfp_fetch_lines = programmable_fetch_get_num_lines(vid_enc, timing);
 	if (rot_fetch_lines) {
-		vert_total = get_vertical_total(timing, true);
+		vert_total = get_vertical_total(timing);
 		horiz_total = get_horizontal_total(timing);
 		if (vert_total >= (vfp_fetch_lines + rot_fetch_lines)) {
 			rot_fetch_start_vsync_counter =
@@ -325,23 +301,19 @@ static void programmable_rot_fetch_config(struct sde_encoder_phys *phys_enc,
 		rot_fetch_start_vsync_counter);
 
 	if (!phys_enc->sde_kms->splash_data.cont_splash_en) {
-		SDE_EVT32(DRMID(phys_enc->parent), f.enable, f.fetch_start);
+		phys_enc->hw_ctl->ops.get_bitmask_intf(
+				phys_enc->hw_ctl, &flush_mask,
+				vid_enc->hw_intf->idx);
+		phys_enc->hw_ctl->ops.update_pending_flush(
+				phys_enc->hw_ctl, flush_mask);
 
-		if (!_sde_encoder_phys_is_ppsplit(phys_enc) ||
-			sde_encoder_phys_vid_is_master(phys_enc)) {
-			phys_enc->hw_ctl->ops.get_bitmask_intf(
-					phys_enc->hw_ctl, &flush_mask,
-					vid_enc->hw_intf->idx);
-			phys_enc->hw_ctl->ops.update_pending_flush(
-					phys_enc->hw_ctl, flush_mask);
-		}
 		spin_lock_irqsave(phys_enc->enc_spinlock, lock_flags);
 		vid_enc->hw_intf->ops.setup_rot_start(vid_enc->hw_intf, &f);
 		spin_unlock_irqrestore(phys_enc->enc_spinlock, lock_flags);
-
-		vid_enc->rot_fetch = f;
-		vid_enc->rot_fetch_valid = true;
 	}
+
+	vid_enc->rot_fetch = f;
+	vid_enc->rot_fetch_valid = true;
 }
 
 static bool sde_encoder_phys_vid_mode_fixup(
@@ -398,13 +370,6 @@ static void sde_encoder_phys_vid_setup_timing_engine(
 			mode.hsync_start, mode.hsync_end);
 	}
 
-	if (!phys_enc->vfp_cached) {
-		phys_enc->vfp_cached =
-			sde_connector_get_panel_vfp(phys_enc->connector, &mode);
-		if (phys_enc->vfp_cached <= 0)
-			phys_enc->vfp_cached = mode.vsync_start - mode.vdisplay;
-	}
-
 	drm_mode_to_intf_timing_params(vid_enc, &mode, &timing_params);
 
 	vid_enc->timing_params = timing_params;
@@ -438,8 +403,8 @@ static void sde_encoder_phys_vid_vblank_irq(void *arg, int irq_idx)
 			to_sde_encoder_phys_vid(phys_enc);
 	struct sde_hw_ctl *hw_ctl;
 	unsigned long lock_flags;
-	u32 flush_register = ~0;
 	u32 reset_status = 0;
+	u32 flush_register = ~0;
 	int new_cnt = -1, old_cnt = -1;
 	u32 event = 0;
 
@@ -510,6 +475,20 @@ static void sde_encoder_phys_vid_underrun_irq(void *arg, int irq_idx)
 	if (phys_enc->parent_ops.handle_underrun_virt)
 		phys_enc->parent_ops.handle_underrun_virt(phys_enc->parent,
 			phys_enc);
+}
+
+static bool _sde_encoder_phys_is_ppsplit(struct sde_encoder_phys *phys_enc)
+{
+	enum sde_rm_topology_name topology;
+
+	if (!phys_enc)
+		return false;
+
+	topology = sde_connector_get_topology_name(phys_enc->connector);
+	if (topology == SDE_RM_TOPOLOGY_PPSPLIT)
+		return true;
+
+	return false;
 }
 
 static bool _sde_encoder_phys_is_dual_ctl(struct sde_encoder_phys *phys_enc)
@@ -627,7 +606,6 @@ static int sde_encoder_phys_vid_control_vblank_irq(
 		return -EINVAL;
 	}
 
-	mutex_lock(phys_enc->vblank_ctl_lock);
 	refcount = atomic_read(&phys_enc->vblank_refcount);
 	vid_enc = to_sde_encoder_phys_vid(phys_enc);
 
@@ -648,17 +626,11 @@ static int sde_encoder_phys_vid_control_vblank_irq(
 	SDE_EVT32(DRMID(phys_enc->parent), enable,
 			atomic_read(&phys_enc->vblank_refcount));
 
-	if (enable && atomic_inc_return(&phys_enc->vblank_refcount) == 1) {
+	if (enable && atomic_inc_return(&phys_enc->vblank_refcount) == 1)
 		ret = sde_encoder_helper_register_irq(phys_enc, INTR_IDX_VSYNC);
-		if (ret)
-			atomic_dec_return(&phys_enc->vblank_refcount);
-	} else if (!enable &&
-			atomic_dec_return(&phys_enc->vblank_refcount) == 0) {
+	else if (!enable && atomic_dec_return(&phys_enc->vblank_refcount) == 0)
 		ret = sde_encoder_helper_unregister_irq(phys_enc,
 				INTR_IDX_VSYNC);
-		if (ret)
-			atomic_inc_return(&phys_enc->vblank_refcount);
-	}
 
 end:
 	if (ret) {
@@ -669,7 +641,6 @@ end:
 				vid_enc->hw_intf->idx - INTF_0,
 				enable, refcount, SDE_EVTLOG_ERROR);
 	}
-	mutex_unlock(phys_enc->vblank_ctl_lock);
 	return ret;
 }
 
@@ -856,7 +827,7 @@ end:
 	if (phys_enc->parent_ops.handle_frame_done && event)
 		phys_enc->parent_ops.handle_frame_done(
 				phys_enc->parent, phys_enc,
-				event);
+				SDE_ENCODER_FRAME_EVENT_DONE);
 	return ret;
 }
 
@@ -986,7 +957,6 @@ static void sde_encoder_phys_vid_disable(struct sde_encoder_phys *phys_enc)
 		sde_encoder_phys_vid_control_vblank_irq(phys_enc, false);
 	}
 exit:
-	phys_enc->vfp_cached = 0;
 	phys_enc->enable_state = SDE_ENC_DISABLED;
 }
 
@@ -1243,7 +1213,6 @@ struct sde_encoder_phys *sde_encoder_phys_vid_init(
 	phys_enc->split_role = p->split_role;
 	phys_enc->intf_mode = INTF_MODE_VIDEO;
 	phys_enc->enc_spinlock = p->enc_spinlock;
-	phys_enc->vblank_ctl_lock = p->vblank_ctl_lock;
 	phys_enc->comp_type = p->comp_type;
 	for (i = 0; i < INTR_IDX_MAX; i++) {
 		irq = &phys_enc->irq[i];

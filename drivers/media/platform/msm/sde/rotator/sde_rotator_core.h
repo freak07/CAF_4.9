@@ -1,4 +1,4 @@
-/* Copyright (c) 2015-2018, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -242,12 +242,6 @@ struct sde_rot_queue {
 	struct sde_rot_hw_resource *hw;
 };
 
-struct sde_rot_queue_v1 {
-	struct kthread_worker *rot_kw;
-	struct task_struct *rot_thread;
-	struct sde_rot_timeline *timeline;
-	struct sde_rot_hw_resource *hw;
-};
 /*
  * struct sde_rot_entry_container - rotation request
  * @list: list of active requests managed by rotator manager
@@ -300,7 +294,7 @@ struct sde_rot_entry {
 	struct kthread_work commit_work;
 	struct kthread_work done_work;
 	struct sde_rot_queue *commitq;
-	struct sde_rot_queue_v1 *fenceq;
+	struct sde_rot_queue *fenceq;
 	struct sde_rot_queue *doneq;
 	struct sde_rot_entry_container *request;
 
@@ -357,7 +351,7 @@ struct sde_rot_file_private {
 	struct list_head req_list;
 	struct list_head perf_list;
 	struct sde_rot_mgr *mgr;
-	struct sde_rot_queue_v1 *fenceq;
+	struct sde_rot_queue *fenceq;
 };
 
 /*
@@ -592,7 +586,7 @@ void sde_rotator_core_dump(struct sde_rot_mgr *mgr);
  */
 int sde_rotator_session_open(struct sde_rot_mgr *mgr,
 	struct sde_rot_file_private **pprivate, int session_id,
-	struct sde_rot_queue_v1 *queue);
+	struct sde_rot_queue *queue);
 
 /*
  * sde_rotator_session_close - close the given rotator per file session

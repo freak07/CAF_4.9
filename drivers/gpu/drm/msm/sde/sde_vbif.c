@@ -1,4 +1,4 @@
-/* Copyright (c) 2015-2018, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -17,8 +17,6 @@
 #include "sde_vbif.h"
 #include "sde_hw_vbif.h"
 #include "sde_trace.h"
-
-#define MAX_XIN_CLIENT	16
 
 /**
  * _sde_vbif_wait_for_xin_halt - wait for the xin to halt
@@ -73,11 +71,6 @@ int sde_vbif_halt_plane_xin(struct sde_kms *sde_kms, u32 xin_id, u32 clk_ctrl)
 	if (!sde_kms) {
 		SDE_ERROR("invalid argument\n");
 		return -EINVAL;
-	}
-
-	if (!sde_kms_is_vbif_operation_allowed(sde_kms)) {
-		SDE_DEBUG("vbif operations not permitted\n");
-		return 0;
 	}
 
 	vbif = sde_kms->hw_vbif[VBIF_RT];
@@ -232,12 +225,6 @@ void sde_vbif_set_ot_limit(struct sde_kms *sde_kms,
 		SDE_ERROR("invalid arguments\n");
 		return;
 	}
-
-	if (!sde_kms_is_vbif_operation_allowed(sde_kms)) {
-		SDE_DEBUG("vbif operations not permitted\n");
-		return;
-	}
-
 	mdp = sde_kms->hw_mdp;
 
 	for (i = 0; i < ARRAY_SIZE(sde_kms->hw_vbif); i++) {
@@ -306,12 +293,6 @@ bool sde_vbif_set_xin_halt(struct sde_kms *sde_kms,
 		SDE_ERROR("invalid arguments\n");
 		return false;
 	}
-
-	if (!sde_kms_is_vbif_operation_allowed(sde_kms)) {
-		SDE_DEBUG("vbif operations not permitted\n");
-		return true;
-	}
-
 	mdp = sde_kms->hw_mdp;
 
 	for (i = 0; i < ARRAY_SIZE(sde_kms->hw_vbif); i++) {
@@ -371,12 +352,6 @@ void sde_vbif_set_qos_remap(struct sde_kms *sde_kms,
 		SDE_ERROR("invalid arguments\n");
 		return;
 	}
-
-	if (!sde_kms_is_vbif_operation_allowed(sde_kms)) {
-		SDE_DEBUG("vbif operations not permitted\n");
-		return;
-	}
-
 	mdp = sde_kms->hw_mdp;
 
 	for (i = 0; i < ARRAY_SIZE(sde_kms->hw_vbif); i++) {
@@ -433,11 +408,6 @@ void sde_vbif_clear_errors(struct sde_kms *sde_kms)
 		return;
 	}
 
-	if (!sde_kms_is_vbif_operation_allowed(sde_kms)) {
-		SDE_DEBUG("vbif operations not permitted\n");
-		return;
-	}
-
 	for (i = 0; i < ARRAY_SIZE(sde_kms->hw_vbif); i++) {
 		vbif = sde_kms->hw_vbif[i];
 		if (vbif && vbif->ops.clear_errors) {
@@ -463,11 +433,6 @@ void sde_vbif_init_memtypes(struct sde_kms *sde_kms)
 		return;
 	}
 
-	if (!sde_kms_is_vbif_operation_allowed(sde_kms)) {
-		SDE_DEBUG("vbif operations not permitted\n");
-		return;
-	}
-
 	for (i = 0; i < ARRAY_SIZE(sde_kms->hw_vbif); i++) {
 		vbif = sde_kms->hw_vbif[i];
 		if (vbif && vbif->cap && vbif->ops.set_mem_type) {
@@ -478,52 +443,6 @@ void sde_vbif_init_memtypes(struct sde_kms *sde_kms)
 			mutex_unlock(&vbif->mutex);
 		}
 	}
-}
-
-int sde_vbif_halt_xin_mask(struct sde_kms *sde_kms, u32 xin_id_mask,
-				bool halt)
-{
-	struct sde_hw_vbif *vbif;
-	int i = 0, status, rc;
-
-	if (!sde_kms) {
-		SDE_ERROR("invalid argument\n");
-		return -EINVAL;
-	}
-
-	vbif = sde_kms->hw_vbif[VBIF_RT];
-
-	if (!vbif->ops.get_halt_ctrl || !vbif->ops.set_halt_ctrl)
-		return 0;
-
-	SDE_EVT32(xin_id_mask, halt);
-
-	for (i = 0; i < MAX_XIN_CLIENT; i++) {
-		if (xin_id_mask & BIT(i)) {
-			/* unhalt the xin-clients */
-			if (!halt) {
-				vbif->ops.set_halt_ctrl(vbif, i, false);
-				continue;
-			}
-
-			status = vbif->ops.get_halt_ctrl(vbif, i);
-			if (status)
-				continue;
-
-			/* halt xin-clients and wait for ack */
-			vbif->ops.set_halt_ctrl(vbif, i, true);
-
-			rc = _sde_vbif_wait_for_xin_halt(vbif, i);
-			if (rc) {
-				SDE_ERROR("xin_halt failed for xin:%d, rc:%d\n",
-					i, rc);
-				SDE_EVT32(xin_id_mask, i, rc, SDE_EVTLOG_ERROR);
-				return rc;
-			}
-		}
-	}
-
-	return 0;
 }
 
 #ifdef CONFIG_DEBUG_FS

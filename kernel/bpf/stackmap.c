@@ -11,9 +11,6 @@
 #include <linux/perf_event.h>
 #include "percpu_freelist.h"
 
-#define STACK_CREATE_FLAG_MASK \
-	(BPF_F_RDONLY | BPF_F_WRONLY)
-
 struct stack_map_bucket {
 	struct pcpu_freelist_node fnode;
 	u32 hash;
@@ -62,7 +59,7 @@ static struct bpf_map *stack_map_alloc(union bpf_attr *attr)
 	if (!capable(CAP_SYS_ADMIN))
 		return ERR_PTR(-EPERM);
 
-	if (attr->map_flags & ~STACK_CREATE_FLAG_MASK)
+	if (attr->map_flags)
 		return ERR_PTR(-EINVAL);
 
 	/* check sanity of attributes */
@@ -91,7 +88,6 @@ static struct bpf_map *stack_map_alloc(union bpf_attr *attr)
 	smap->map.key_size = attr->key_size;
 	smap->map.value_size = value_size;
 	smap->map.max_entries = attr->max_entries;
-	smap->map.map_flags = attr->map_flags;
 	smap->n_buckets = n_buckets;
 	smap->map.pages = round_up(cost, PAGE_SIZE) >> PAGE_SHIFT;
 

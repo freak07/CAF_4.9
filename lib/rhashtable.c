@@ -448,10 +448,8 @@ static void *rhashtable_lookup_one(struct rhashtable *ht,
 		if (!key ||
 		    (ht->p.obj_cmpfn ?
 		     ht->p.obj_cmpfn(&arg, rht_obj(ht, head)) :
-		     rhashtable_compare(&arg, rht_obj(ht, head)))) {
-			pprev = &head->next;
+		     rhashtable_compare(&arg, rht_obj(ht, head))))
 			continue;
-		}
 
 		if (!ht->rhlist)
 			return rht_obj(ht, head);

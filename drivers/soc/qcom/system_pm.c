@@ -14,10 +14,12 @@
 #include <linux/kernel.h>
 #include <linux/platform_device.h>
 #include <asm/arch_timer.h>
+
+#include <soc/qcom/rpmh.h>
+#include <soc/qcom/system_pm.h>
+
 #include <clocksource/arm_arch_timer.h>
 #include "rpmh_master_stat.h"
-#include <soc/qcom/lpm_levels.h>
-#include <soc/qcom/rpmh.h>
 
 #define PDC_TIME_VALID_SHIFT	31
 #define PDC_TIME_UPPER_MASK	0xFFFFFF
@@ -42,7 +44,7 @@ static int setup_wakeup(uint32_t lo, uint32_t hi)
 	return rpmh_write_control(rpmh_client, cmd, ARRAY_SIZE(cmd));
 }
 
-static int system_sleep_update_wakeup(bool from_idle)
+int system_sleep_update_wakeup(void)
 {
 	uint32_t lo = ~0U, hi = ~0U;
 
@@ -51,14 +53,16 @@ static int system_sleep_update_wakeup(bool from_idle)
 
 	return setup_wakeup(lo, hi);
 }
+EXPORT_SYMBOL(system_sleep_update_wakeup);
 
 /**
  * system_sleep_allowed() - Returns if its okay to enter system low power modes
  */
-static bool system_sleep_allowed(void)
+bool system_sleep_allowed(void)
 {
 	return (rpmh_ctrlr_idle(rpmh_client) == 0);
 }
+EXPORT_SYMBOL(system_sleep_allowed);
 
 /**
  * system_sleep_enter() - Activties done when entering system low power modes
@@ -66,27 +70,25 @@ static bool system_sleep_allowed(void)
  * Returns 0 for success or error values from writing the sleep/wake values to
  * the hardware block.
  */
-static int system_sleep_enter(struct cpumask *mask)
+int system_sleep_enter(void)
 {
+	if (IS_ERR_OR_NULL(rpmh_client))
+		return -EFAULT;
+
 	gic_v3_dist_save();
 	return rpmh_flush(rpmh_client);
 }
+EXPORT_SYMBOL(system_sleep_enter);
 
 /**
  * system_sleep_exit() - Activities done when exiting system low power modes
  */
-static void system_sleep_exit(void)
+void system_sleep_exit(void)
 {
-	msm_rpmh_master_stats_update();
 	gic_v3_dist_restore();
+	msm_rpmh_master_stats_update();
 }
-
-static struct system_pm_ops pm_ops = {
-	.enter = system_sleep_enter,
-	.exit = system_sleep_exit,
-	.update_wakeup = system_sleep_update_wakeup,
-	.sleep_allowed = system_sleep_allowed,
-};
+EXPORT_SYMBOL(system_sleep_exit);
 
 static int sys_pm_probe(struct platform_device *pdev)
 {
@@ -94,7 +96,7 @@ static int sys_pm_probe(struct platform_device *pdev)
 	if (IS_ERR_OR_NULL(rpmh_client))
 		return PTR_ERR(rpmh_client);
 
-	return register_system_pm_ops(&pm_ops);
+	return 0;
 }
 
 static const struct of_device_id sys_pm_drv_match[] = {
@@ -106,7 +108,6 @@ static struct platform_driver sys_pm_driver = {
 	.probe = sys_pm_probe,
 	.driver = {
 		.name = KBUILD_MODNAME,
-		.suppress_bind_attrs = true,
 		.of_match_table = sys_pm_drv_match,
 	},
 };

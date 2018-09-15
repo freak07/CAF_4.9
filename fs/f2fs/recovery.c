@@ -144,7 +144,7 @@ static int recover_dentry(struct inode *inode, struct page *ipage,
 retry:
 	de = __f2fs_find_entry(dir, &fname, &page);
 	if (de && inode->i_ino == le32_to_cpu(de->ino))
-		goto out_put;
+		goto out_unmap_put;
 
 	if (de) {
 		einode = f2fs_iget_retry(inode->i_sb, le32_to_cpu(de->ino));
@@ -153,19 +153,19 @@ retry:
 			err = PTR_ERR(einode);
 			if (err == -ENOENT)
 				err = -EEXIST;
-			goto out_put;
+			goto out_unmap_put;
 		}
 
 		err = dquot_initialize(einode);
 		if (err) {
 			iput(einode);
-			goto out_put;
+			goto out_unmap_put;
 		}
 
 		err = acquire_orphan_inode(F2FS_I_SB(inode));
 		if (err) {
 			iput(einode);
-			goto out_put;
+			goto out_unmap_put;
 		}
 		f2fs_delete_entry(de, page, dir, einode);
 		iput(einode);
@@ -180,7 +180,8 @@ retry:
 		goto retry;
 	goto out;
 
-out_put:
+out_unmap_put:
+	f2fs_dentry_kunmap(dir, page);
 	f2fs_put_page(page, 0);
 out:
 	if (file_enc_name(inode))
@@ -242,9 +243,6 @@ static int find_fsync_dnodes(struct f2fs_sb_info *sbi, struct list_head *head,
 	struct curseg_info *curseg;
 	struct page *page = NULL;
 	block_t blkaddr;
-	unsigned int loop_cnt = 0;
-	unsigned int free_blocks = sbi->user_block_count -
-					valid_user_blocks(sbi);
 	int err = 0;
 
 	/* get node pages in the current segment */
@@ -297,17 +295,6 @@ static int find_fsync_dnodes(struct f2fs_sb_info *sbi, struct list_head *head,
 		if (IS_INODE(page) && is_dent_dnode(page))
 			entry->last_dentry = blkaddr;
 next:
-		/* sanity check in order to detect looped node chain */
-		if (++loop_cnt >= free_blocks ||
-			blkaddr == next_blkaddr_of_node(page)) {
-			f2fs_msg(sbi->sb, KERN_NOTICE,
-				"%s: detect looped node chain, "
-				"blkaddr:%u, next:%u",
-				__func__, blkaddr, next_blkaddr_of_node(page));
-			err = -EINVAL;
-			break;
-		}
-
 		/* check next segment */
 		blkaddr = next_blkaddr_of_node(page);
 		f2fs_put_page(page, 1);

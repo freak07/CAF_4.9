@@ -89,9 +89,6 @@ const char *ipa_event_name[] = {
 	__stringify(DEL_L2TP_VLAN_MAPPING),
 	__stringify(IPA_PER_CLIENT_STATS_CONNECT_EVENT),
 	__stringify(IPA_PER_CLIENT_STATS_DISCONNECT_EVENT),
-	__stringify(ADD_BRIDGE_VLAN_MAPPING),
-	__stringify(DEL_BRIDGE_VLAN_MAPPING),
-	__stringify(WLAN_FWR_SSR_BEFORE_SHUTDOWN),
 };
 
 const char *ipa_hdr_l2_type_name[] = {
@@ -584,15 +581,6 @@ static int ipa_attrib_dump(struct ipa_rule_attrib *attrib,
 
 	if (attrib->attrib_mask & IPA_FLT_MAC_ETHER_TYPE)
 		pr_err("ether_type:%x ", attrib->ether_type);
-
-	if (attrib->attrib_mask & IPA_FLT_L2TP_INNER_IP_TYPE)
-		pr_err("l2tp inner ip type: %d ", attrib->type);
-
-	if (attrib->attrib_mask & IPA_FLT_L2TP_INNER_IPV4_DST_ADDR) {
-		addr[0] = htonl(attrib->u.v4.dst_addr);
-		mask[0] = htonl(attrib->u.v4.dst_addr_mask);
-		pr_err("dst_addr:%pI4 dst_addr_mask:%pI4 ", addr, mask);
-	}
 
 	pr_err("\n");
 	return 0;
@@ -1904,7 +1892,7 @@ static ssize_t ipa_enable_ipc_low(struct file *file,
 				ipc_log_context_create(IPA_IPC_LOG_PAGES,
 				"ipa_low", 0);
 			if (ipa_ipc_low_buff == NULL)
-				IPADBG("failed to get logbuf_low\n");
+				IPAERR("failed to get logbuf_low\n");
 		}
 		ipa_ctx->logbuf_low = ipa_ipc_low_buff;
 	} else {

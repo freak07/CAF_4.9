@@ -64,12 +64,6 @@ struct cpuhp_cpu_state {
 
 static DEFINE_PER_CPU(struct cpuhp_cpu_state, cpuhp_state);
 
-#if defined(CONFIG_LOCKDEP) && defined(CONFIG_SMP)
-static struct lock_class_key cpuhp_state_key;
-static struct lockdep_map cpuhp_state_lock_map =
-	STATIC_LOCKDEP_MAP_INIT("cpuhp_state", &cpuhp_state_key);
-#endif
-
 /**
  * cpuhp_step - Hotplug state machine step
  * @name:	Name of the step
@@ -578,7 +572,6 @@ static void cpuhp_thread_fun(unsigned int cpu)
 
 	st->should_run = false;
 
-	lock_map_acquire(&cpuhp_state_lock_map);
 	/* Single callback invocation for [un]install ? */
 	if (st->single) {
 		if (st->cb_state < CPUHP_AP_ONLINE) {
@@ -610,7 +603,6 @@ static void cpuhp_thread_fun(unsigned int cpu)
 		else if (st->state > st->target)
 			ret = cpuhp_ap_offline(cpu, st);
 	}
-	lock_map_release(&cpuhp_state_lock_map);
 	st->result = ret;
 	complete(&st->done);
 }
@@ -624,9 +616,6 @@ cpuhp_invoke_ap_callback(int cpu, enum cpuhp_state state, bool bringup,
 
 	if (!cpu_online(cpu))
 		return 0;
-
-	lock_map_acquire(&cpuhp_state_lock_map);
-	lock_map_release(&cpuhp_state_lock_map);
 
 	/*
 	 * If we are up and running, use the hotplug thread. For early calls
@@ -671,8 +660,6 @@ static int cpuhp_kick_ap_work(unsigned int cpu)
 	enum cpuhp_state state = st->state;
 
 	trace_cpuhp_enter(cpu, st->target, state, cpuhp_kick_ap_work);
-	lock_map_acquire(&cpuhp_state_lock_map);
-	lock_map_release(&cpuhp_state_lock_map);
 	__cpuhp_kick_ap_work(st);
 	wait_for_completion(&st->done);
 	trace_cpuhp_exit(cpu, st->state, state, st->result);
@@ -1389,9 +1376,9 @@ static struct cpuhp_step cpuhp_bp_states[] = {
 	 * before blk_mq_queue_reinit_notify() from notify_dead(),
 	 * otherwise a RCU stall occurs.
 	 */
-	[CPUHP_TIMERS_PREPARE] = {
+	[CPUHP_TIMERS_DEAD] = {
 		.name			= "timers:dead",
-		.startup.single		= timers_prepare_cpu,
+		.startup.single		= NULL,
 		.teardown.single	= timers_dead_cpu,
 	},
 	/* Kicks the plugged cpu into life */
@@ -1400,6 +1387,11 @@ static struct cpuhp_step cpuhp_bp_states[] = {
 		.startup.single		= bringup_cpu,
 		.teardown.single	= NULL,
 		.cant_stop		= true,
+	},
+	[CPUHP_AP_SMPCFD_DYING] = {
+		.name			= "smpcfd:dying",
+		.startup.single		= NULL,
+		.teardown.single	= smpcfd_dying_cpu,
 	},
 	/*
 	 * Handled on controll processor until the plugged processor manages
@@ -1446,11 +1438,6 @@ static struct cpuhp_step cpuhp_ap_states[] = {
 		.name			= "KMAP:dying",
 		.startup.single		= NULL,
 		.teardown.single	= kmap_remove_unused_cpu,
-	},
-	[CPUHP_AP_SMPCFD_DYING] = {
-		.name			= "smpcfd:dying",
-		.startup.single		= NULL,
-		.teardown.single	= smpcfd_dying_cpu,
 	},
 	/* Entry state on starting. Interrupts enabled from here on. Transient
 	 * state for synchronsization */

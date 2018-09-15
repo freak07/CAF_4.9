@@ -30,10 +30,16 @@ static inline void *kasan_mem_to_shadow(const void *addr)
 }
 
 /* Enable reporting bugs after kasan_disable_current() */
-extern void kasan_enable_current(void);
+static inline void kasan_enable_current(void)
+{
+	current->kasan_depth++;
+}
 
 /* Disable reporting bugs for current task */
-extern void kasan_disable_current(void);
+static inline void kasan_disable_current(void)
+{
+	current->kasan_depth--;
+}
 
 void kasan_unpoison_shadow(const void *address, size_t size);
 
@@ -46,7 +52,7 @@ void kasan_free_pages(struct page *page, unsigned int order);
 void kasan_cache_create(struct kmem_cache *cache, size_t *size,
 			unsigned long *flags);
 void kasan_cache_shrink(struct kmem_cache *cache);
-void kasan_cache_shutdown(struct kmem_cache *cache);
+void kasan_cache_destroy(struct kmem_cache *cache);
 
 void kasan_poison_slab(struct page *page);
 void kasan_unpoison_object_data(struct kmem_cache *cache, void *object);
@@ -75,9 +81,6 @@ size_t ksize(const void *);
 static inline void kasan_unpoison_slab(const void *ptr) { ksize(ptr); }
 size_t kasan_metadata_size(struct kmem_cache *cache);
 
-bool kasan_save_enable_multi_shot(void);
-void kasan_restore_multi_shot(bool enabled);
-
 #else /* CONFIG_KASAN */
 
 static inline void kasan_unpoison_shadow(const void *address, size_t size) {}
@@ -95,7 +98,7 @@ static inline void kasan_cache_create(struct kmem_cache *cache,
 				      size_t *size,
 				      unsigned long *flags) {}
 static inline void kasan_cache_shrink(struct kmem_cache *cache) {}
-static inline void kasan_cache_shutdown(struct kmem_cache *cache) {}
+static inline void kasan_cache_destroy(struct kmem_cache *cache) {}
 
 static inline void kasan_poison_slab(struct page *page) {}
 static inline void kasan_unpoison_object_data(struct kmem_cache *cache,

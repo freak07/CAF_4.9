@@ -22,7 +22,6 @@ extern void (*arm_pm_idle)(void);
 
 extern unsigned int user_debug;
 extern char* (*arch_read_hardware_id)(void);
-const char * __init arch_read_machine_name(void);
 
 #endif /* !__ASSEMBLY__ */
 

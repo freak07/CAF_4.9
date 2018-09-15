@@ -1040,12 +1040,6 @@ static int mmc_blk_ioctl_rpmb_cmd(struct block_device *bdev,
 		goto idata_free;
 	}
 
-	/*
-	 * Ensure rpmb_req_pending flag is synchronized between multiple
-	 * entities which may use rpmb ioclts with a lock.
-	 */
-	mutex_lock(&card->host->rpmb_req_mutex);
-	atomic_set(&card->host->rpmb_req_pending, 1);
 	mmc_get_card(card);
 
 	if (mmc_card_doing_bkops(card)) {
@@ -1161,9 +1155,6 @@ static int mmc_blk_ioctl_rpmb_cmd(struct block_device *bdev,
 
 cmd_rel_host:
 	mmc_put_card(card);
-	atomic_set(&card->host->rpmb_req_pending, 0);
-	mutex_unlock(&card->host->rpmb_req_mutex);
-
 
 idata_free:
 	for (i = 0; i < MMC_IOC_MAX_RPMB_CMD; i++) {
@@ -3196,11 +3187,11 @@ static struct mmc_cmdq_req *mmc_blk_cmdq_rw_prep(
 static void mmc_blk_cmdq_requeue_rw_rq(struct mmc_queue *mq,
 				struct request *req)
 {
-	struct request_queue *q = req->q;
+	struct mmc_card *card = mq->card;
+	struct mmc_host *host = card->host;
 
-	spin_lock_irq(q->queue_lock);
-	blk_requeue_request(q, req);
-	spin_unlock_irq(q->queue_lock);
+	blk_requeue_request(req->q, req);
+	mmc_put_card(host->card);
 }
 
 static int mmc_blk_cmdq_issue_rw_rq(struct mmc_queue *mq, struct request *req)
@@ -3630,7 +3621,7 @@ void mmc_blk_cmdq_complete_rq(struct request *rq)
 	 * or disable state so cannot receive any completion of
 	 * other requests.
 	 */
-	WARN_ON(test_bit(CMDQ_STATE_ERR, &ctx_info->curr_state));
+	BUG_ON(test_bit(CMDQ_STATE_ERR, &ctx_info->curr_state));
 
 	/* clear pending request */
 	BUG_ON(!test_and_clear_bit(cmdq_req->tag,
@@ -3664,7 +3655,7 @@ void mmc_blk_cmdq_complete_rq(struct request *rq)
 out:
 
 	mmc_cmdq_clk_scaling_stop_busy(host, true, is_dcmd);
-	if (!(err || cmdq_req->resp_err)) {
+	if (!test_bit(CMDQ_STATE_ERR, &ctx_info->curr_state)) {
 		mmc_host_clk_release(host);
 		wake_up(&ctx_info->wait);
 		mmc_put_card(host->card);
@@ -3994,7 +3985,6 @@ cmdq_switch:
 		pr_err("%s: %s: mmc_blk_cmdq_switch failed: %d\n",
 			mmc_hostname(host), __func__,  err);
 		ret = err;
-		goto out;
 	}
 cmdq_unhalt:
 	err = mmc_cmdq_halt(host, false);
@@ -4053,7 +4043,7 @@ static int mmc_blk_cmdq_issue_rq(struct mmc_queue *mq, struct request *req)
 		struct mmc_host *host = card->host;
 		struct mmc_cmdq_context_info *ctx = &host->cmdq_ctx;
 
-		if (mmc_req_is_special(req) &&
+		if ((req_op(req) == REQ_OP_FLUSH || req_op(req) ==  REQ_OP_DISCARD) &&
 		    (card->quirks & MMC_QUIRK_CMDQ_EMPTY_BEFORE_DCMD) &&
 		    ctx->active_small_sector_read_reqs) {
 			ret = wait_event_interruptible(ctx->queue_empty_wq,
@@ -4091,23 +4081,9 @@ static int mmc_blk_cmdq_issue_rq(struct mmc_queue *mq, struct request *req)
 			 * If issuing of the request fails with eitehr EBUSY or
 			 * EAGAIN error, re-queue the request.
 			 * This case would occur with ICE calls.
-			 * For request which gets completed successfully or
-			 * errored out, we release host lock in completion or
-			 * error handling softirq context. But here the request
-			 * is neither completed nor erred-out, so release the
-			 * host lock explicitly.
 			 */
-			if (ret == -EBUSY || ret == -EAGAIN) {
+			if (ret == -EBUSY || ret == -EAGAIN)
 				mmc_blk_cmdq_requeue_rw_rq(mq, req);
-				mmc_put_card(host->card);
-			} else if (ret == -ENOMEM) {
-				/*
-				 * Elaborate error handling is not needed for
-				 * system errors. Let the higher layer decide
-				 * on the next steps.
-				 */
-				goto out;
-			}
 		}
 	}
 
@@ -4702,7 +4678,9 @@ static int mmc_blk_probe(struct mmc_card *card)
 
 	dev_set_drvdata(&card->dev, md);
 
+#ifdef CONFIG_MMC_BLOCK_DEFERRED_RESUME
 	mmc_set_bus_resume_policy(card->host, 1);
+#endif
 
 	if (mmc_add_disk(md))
 		goto out;
@@ -4747,7 +4725,9 @@ static void mmc_blk_remove(struct mmc_card *card)
 	pm_runtime_put_noidle(&card->dev);
 	mmc_blk_remove_req(md);
 	dev_set_drvdata(&card->dev, NULL);
+#ifdef CONFIG_MMC_BLOCK_DEFERRED_RESUME
 	mmc_set_bus_resume_policy(card->host, 0);
+#endif
 }
 
 static int _mmc_blk_suspend(struct mmc_card *card, bool wait)

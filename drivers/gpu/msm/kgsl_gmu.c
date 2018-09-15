@@ -131,10 +131,6 @@ static int _gmu_iommu_fault_handler(struct device *dev,
 		fault_type = "translation";
 	else if (flags & IOMMU_FAULT_PERMISSION)
 		fault_type = "permission";
-	else if (flags & IOMMU_FAULT_EXTERNAL)
-		fault_type = "external";
-	else if (flags & IOMMU_FAULT_TRANSACTION_STALLED)
-		fault_type = "transaction stalled";
 
 	dev_err(dev, "GMU fault addr = %lX, context=%s (%s %s fault)\n",
 			addr, name,
@@ -313,7 +309,7 @@ static struct {
  * @gmu: Pointer to GMU device
  * @node: Pointer to GMU device node
  */
-static int gmu_iommu_init(struct gmu_device *gmu, struct device_node *node)
+int gmu_iommu_init(struct gmu_device *gmu, struct device_node *node)
 {
 	struct device_node *child;
 	struct gmu_iommu_context *ctx = NULL;
@@ -350,7 +346,7 @@ static int gmu_iommu_init(struct gmu_device *gmu, struct device_node *node)
  * from IOMMU context banks.
  * @gmu: Pointer to GMU device
  */
-static void gmu_kmem_close(struct gmu_device *gmu)
+void gmu_kmem_close(struct gmu_device *gmu)
 {
 	int i;
 	struct gmu_memdesc *md = &gmu->fw_image;
@@ -390,7 +386,7 @@ static void gmu_kmem_close(struct gmu_device *gmu)
 	iommu_domain_free(ctx->domain);
 }
 
-static void gmu_memory_close(struct gmu_device *gmu)
+void gmu_memory_close(struct gmu_device *gmu)
 {
 	gmu_kmem_close(gmu);
 	/* Free user memory context */
@@ -404,7 +400,7 @@ static void gmu_memory_close(struct gmu_device *gmu)
  * @gmu: Pointer to GMU device
  * @node: Pointer to GMU device node
  */
-static int gmu_memory_probe(struct gmu_device *gmu, struct device_node *node)
+int gmu_memory_probe(struct gmu_device *gmu, struct device_node *node)
 {
 	int ret;
 
@@ -757,7 +753,7 @@ static int gmu_bus_vote_init(struct gmu_device *gmu, struct kgsl_pwrctrl *pwr)
 	return 0;
 }
 
-static int gmu_rpmh_init(struct gmu_device *gmu, struct kgsl_pwrctrl *pwr)
+int gmu_rpmh_init(struct gmu_device *gmu, struct kgsl_pwrctrl *pwr)
 {
 	struct rpmh_arc_vals gfx_arc, cx_arc, mx_arc;
 	int ret;

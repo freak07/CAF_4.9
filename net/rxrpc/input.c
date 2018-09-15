@@ -649,7 +649,6 @@ static void rxrpc_input_ackinfo(struct rxrpc_call *call, struct sk_buff *skb,
 	struct rxrpc_skb_priv *sp = rxrpc_skb(skb);
 	struct rxrpc_peer *peer;
 	unsigned int mtu;
-	bool wake = false;
 	u32 rwind = ntohl(ackinfo->rwind);
 
 	_proto("Rx ACK %%%u Info { rx=%u max=%u rwin=%u jm=%u }",
@@ -657,14 +656,9 @@ static void rxrpc_input_ackinfo(struct rxrpc_call *call, struct sk_buff *skb,
 	       ntohl(ackinfo->rxMTU), ntohl(ackinfo->maxMTU),
 	       rwind, ntohl(ackinfo->jumbo_max));
 
-	if (call->tx_winsize != rwind) {
-		if (rwind > RXRPC_RXTX_BUFF_SIZE - 1)
-			rwind = RXRPC_RXTX_BUFF_SIZE - 1;
-		if (rwind > call->tx_winsize)
-			wake = true;
-		call->tx_winsize = rwind;
-	}
-
+	if (rwind > RXRPC_RXTX_BUFF_SIZE - 1)
+		rwind = RXRPC_RXTX_BUFF_SIZE - 1;
+	call->tx_winsize = rwind;
 	if (call->cong_ssthresh > rwind)
 		call->cong_ssthresh = rwind;
 
@@ -678,9 +672,6 @@ static void rxrpc_input_ackinfo(struct rxrpc_call *call, struct sk_buff *skb,
 		spin_unlock_bh(&peer->lock);
 		_net("Net MTU %u (maxdata %u)", peer->mtu, peer->maxdata);
 	}
-
-	if (wake)
-		wake_up(&call->waitq);
 }
 
 /*
@@ -1166,19 +1157,16 @@ void rxrpc_data_ready(struct sock *udp_sk)
 			goto discard_unlock;
 
 		if (sp->hdr.callNumber == chan->last_call) {
-			if (chan->call ||
-			    sp->hdr.type == RXRPC_PACKET_TYPE_ABORT)
-				goto discard_unlock;
-
-			/* For the previous service call, if completed
-			 * successfully, we discard all further packets.
+			/* For the previous service call, if completed successfully, we
+			 * discard all further packets.
 			 */
 			if (rxrpc_conn_is_service(conn) &&
-			    chan->last_type == RXRPC_PACKET_TYPE_ACK)
+			    (chan->last_type == RXRPC_PACKET_TYPE_ACK ||
+			     sp->hdr.type == RXRPC_PACKET_TYPE_ABORT))
 				goto discard_unlock;
 
-			/* But otherwise we need to retransmit the final packet
-			 * from data cached in the connection record.
+			/* But otherwise we need to retransmit the final packet from
+			 * data cached in the connection record.
 			 */
 			rxrpc_post_packet_to_conn(conn, skb);
 			goto out_unlock;

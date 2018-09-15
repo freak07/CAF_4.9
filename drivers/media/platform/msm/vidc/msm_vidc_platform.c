@@ -1,4 +1,4 @@
-/* Copyright (c) 2018, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -120,7 +120,7 @@ static struct msm_vidc_common_data sdm845_common_data[] = {
 	},
 	{
 		.key = "qcom,max-secure-instances",
-		.value = 2,
+		.value = 5,
 	},
 	{
 		.key = "qcom,max-hw-load",
@@ -154,10 +154,6 @@ static struct msm_vidc_common_data sdm845_common_data[] = {
 		.key = "qcom,debug-timeout",
 		.value = 0,
 	},
-	{
-		.key = "qcom,enable-idle-indicator",
-		.value = 1,
-	},
 };
 
 static struct msm_vidc_common_data sdm670_common_data_v0[] = {
@@ -183,7 +179,7 @@ static struct msm_vidc_common_data sdm670_common_data_v0[] = {
 	},
 	{
 		.key = "qcom,max-hw-load",
-		.value = 2219400,
+		.value = 1944000,
 	},
 	{
 		.key = "qcom,max-hq-mbs-per-frame",
@@ -208,10 +204,6 @@ static struct msm_vidc_common_data sdm670_common_data_v0[] = {
 	{
 		.key = "qcom,hw-resp-timeout",
 		.value = 1000,
-	},
-	{
-		.key = "qcom,enable-idle-indicator",
-		.value = 1,
 	},
 };
 
@@ -263,10 +255,6 @@ static struct msm_vidc_common_data sdm670_common_data_v1[] = {
 	{
 		.key = "qcom,hw-resp-timeout",
 		.value = 1000,
-	},
-	{
-		.key = "qcom,enable-idle-indicator",
-		.value = 1,
 	},
 };
 

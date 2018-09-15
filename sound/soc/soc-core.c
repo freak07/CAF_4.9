@@ -34,7 +34,6 @@
 #include <linux/ctype.h>
 #include <linux/slab.h>
 #include <linux/of.h>
-#include <linux/dma-mapping.h>
 #include <sound/core.h>
 #include <sound/jack.h>
 #include <sound/pcm.h>
@@ -1073,8 +1072,7 @@ static int soc_bind_dai_link(struct snd_soc_card *card,
 	}
 	if (!rtd->platform) {
 		dev_err(card->dev, "ASoC: platform %s not registered\n",
-			((platform_name) ? platform_name :
-			  dai_link->platform_of_node->full_name));
+			dai_link->platform_name);
 		goto _err_defer;
 	}
 
@@ -2666,8 +2664,6 @@ int snd_soc_register_card(struct snd_soc_card *card)
 	ret = snd_soc_instantiate_card(card);
 	if (ret != 0)
 		return ret;
-
-	arch_setup_dma_ops(card->dev, 0, 0, NULL, 0);
 
 	/* deactivate pins to sleep state */
 	list_for_each_entry(rtd, &card->rtd_list, list)  {

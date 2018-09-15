@@ -669,27 +669,6 @@ static int msm_drm_init(struct device *dev, struct drm_driver *drv)
 		}
 	}
 
-	/**
-	 * Since pp interrupt is heavy weight, try to queue the work
-	 * into a dedicated worker thread, so that they dont interrupt
-	 * other important events.
-	 */
-	kthread_init_worker(&priv->pp_event_worker);
-	priv->pp_event_thread = kthread_run(kthread_worker_fn,
-			&priv->pp_event_worker, "pp_event");
-
-	ret = sched_setscheduler(priv->pp_event_thread,
-						SCHED_FIFO, &param);
-	if (ret)
-		pr_warn("pp_event thread priority update failed: %d\n",
-								ret);
-
-	if (IS_ERR(priv->pp_event_thread)) {
-		dev_err(dev, "failed to create pp_event kthread\n");
-		priv->pp_event_thread = NULL;
-		goto fail;
-	}
-
 	ret = drm_vblank_init(ddev, priv->num_crtcs);
 	if (ret < 0) {
 		dev_err(dev, "failed to initialize vblank\n");
@@ -947,14 +926,6 @@ static void msm_lastclose(struct drm_device *dev)
 	struct msm_drm_private *priv = dev->dev_private;
 	struct msm_kms *kms = priv->kms;
 	int i;
-
-	/* check for splash status before triggering cleanup
-	 * if we end up here with splash status ON i.e before first
-	 * commit then ignore the last close call
-	 */
-	if (kms && kms->funcs && kms->funcs->check_for_splash
-		&& kms->funcs->check_for_splash(kms))
-		return;
 
 	/*
 	 * clean up vblank disable immediately as this is the last close.
@@ -1443,10 +1414,9 @@ static int msm_release(struct inode *inode, struct file *filp)
 	struct drm_minor *minor = file_priv->minor;
 	struct drm_device *dev = minor->dev;
 	struct msm_drm_private *priv = dev->dev_private;
-	struct msm_drm_event *node, *temp, *tmp_node;
+	struct msm_drm_event *node, *temp;
 	u32 count;
 	unsigned long flags;
-	LIST_HEAD(tmp_head);
 
 	spin_lock_irqsave(&dev->event_lock, flags);
 	list_for_each_entry_safe(node, temp, &priv->client_event_list,
@@ -1454,27 +1424,52 @@ static int msm_release(struct inode *inode, struct file *filp)
 		if (node->base.file_priv != file_priv)
 			continue;
 		list_del(&node->base.link);
-		list_add_tail(&node->base.link, &tmp_head);
-	}
-	spin_unlock_irqrestore(&dev->event_lock, flags);
-
-	list_for_each_entry_safe(node, temp, &tmp_head,
-			base.link) {
-		list_del(&node->base.link);
-		count = msm_event_client_count(dev, &node->info, false);
-
-		list_for_each_entry(tmp_node, &tmp_head, base.link) {
-			if (tmp_node->event.type == node->info.event &&
-				tmp_node->info.object_id ==
-					node->info.object_id)
-				count++;
-		}
+		spin_unlock_irqrestore(&dev->event_lock, flags);
+		count = msm_event_client_count(dev, &node->info, true);
 		if (!count)
 			msm_register_event(dev, &node->info, file_priv, false);
 		kfree(node);
+		spin_lock_irqsave(&dev->event_lock, flags);
 	}
+	spin_unlock_irqrestore(&dev->event_lock, flags);
 
 	return drm_release(inode, filp);
+}
+
+/**
+ * msm_drv_framebuffer_remove - remove and unreference a framebuffer object
+ * @fb: framebuffer to remove
+ */
+void msm_drv_framebuffer_remove(struct drm_framebuffer *fb)
+{
+	struct drm_device *dev;
+
+	if (!fb)
+		return;
+
+	dev = fb->dev;
+
+	WARN_ON(!list_empty(&fb->filp_head));
+
+	drm_framebuffer_unreference(fb);
+}
+
+struct msm_drv_rmfb2_work {
+	struct work_struct work;
+	struct list_head fbs;
+};
+
+static void msm_drv_rmfb2_work_fn(struct work_struct *w)
+{
+	struct msm_drv_rmfb2_work *arg = container_of(w, typeof(*arg), work);
+
+	while (!list_empty(&arg->fbs)) {
+		struct drm_framebuffer *fb =
+			list_first_entry(&arg->fbs, typeof(*fb), filp_head);
+
+		list_del_init(&fb->filp_head);
+		msm_drv_framebuffer_remove(fb);
+	}
 }
 
 /**
@@ -1520,7 +1515,25 @@ int msm_ioctl_rmfb2(struct drm_device *dev, void *data,
 	list_del_init(&fb->filp_head);
 	mutex_unlock(&file_priv->fbs_lock);
 
-	drm_framebuffer_unreference(fb);
+	/*
+	 * we now own the reference that was stored in the fbs list
+	 *
+	 * drm_framebuffer_remove may fail with -EINTR on pending signals,
+	 * so run this in a separate stack as there's no way to correctly
+	 * handle this after the fb is already removed from the lookup table.
+	 */
+	if (drm_framebuffer_read_refcount(fb) > 1) {
+		struct msm_drv_rmfb2_work arg;
+
+		INIT_WORK_ONSTACK(&arg.work, msm_drv_rmfb2_work_fn);
+		INIT_LIST_HEAD(&arg.fbs);
+		list_add_tail(&fb->filp_head, &arg.fbs);
+
+		schedule_work(&arg.work);
+		flush_work(&arg.work);
+		destroy_work_on_stack(&arg.work);
+	} else
+		drm_framebuffer_unreference(fb);
 
 	return 0;
 }
@@ -1827,27 +1840,6 @@ static int add_display_components(struct device *dev,
 	return ret;
 }
 
-static int add_bridge_components(struct device *dev,
-				  struct component_match **matchptr)
-{
-	struct device_node *node;
-
-	if (of_device_is_compatible(dev->of_node, "qcom,sde-kms")) {
-		struct device_node *np = dev->of_node;
-		unsigned int i;
-
-		for (i = 0; ; i++) {
-			node = of_parse_phandle(np, "bridges", i);
-			if (!node)
-				break;
-
-			component_match_add(dev, matchptr, compare_of, node);
-		}
-	}
-
-	return 0;
-}
-
 struct msm_gem_address_space *
 msm_gem_smmu_address_space_get(struct drm_device *dev,
 		unsigned int domain)
@@ -1939,10 +1931,6 @@ static int msm_pdev_probe(struct platform_device *pdev)
 	if (ret)
 		return ret;
 
-	ret = add_bridge_components(&pdev->dev, &match);
-	if (ret)
-		return ret;
-
 	pdev->dev.coherent_dma_mask = DMA_BIT_MASK(32);
 	return component_master_add_with_match(&pdev->dev, &msm_drm_ops, match);
 }
@@ -1994,7 +1982,6 @@ static struct platform_driver msm_platform_driver = {
 		.name   = "msm_drm",
 		.of_match_table = dt_match,
 		.pm     = &msm_pm_ops,
-		.suppress_bind_attrs = true,
 	},
 };
 

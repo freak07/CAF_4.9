@@ -23,6 +23,8 @@
 #endif
 #endif
 
+#define ARRAY_SIZE(x) (sizeof(x)/sizeof(x[0]))
+
 #ifdef __GNUC__
 #define TYPEOF(x) (__typeof__(x))
 #else

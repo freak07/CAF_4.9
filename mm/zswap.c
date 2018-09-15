@@ -752,21 +752,17 @@ static int __zswap_param_set(const char *val, const struct kernel_param *kp,
 	pool = zswap_pool_find_get(type, compressor);
 	if (pool) {
 		zswap_pool_debug("using existing", pool);
-		WARN_ON(pool == zswap_pool_current());
 		list_del_rcu(&pool->list);
-	}
-
-	spin_unlock(&zswap_pools_lock);
-
-	if (!pool)
+	} else {
+		spin_unlock(&zswap_pools_lock);
 		pool = zswap_pool_create(type, compressor);
+		spin_lock(&zswap_pools_lock);
+	}
 
 	if (pool)
 		ret = param_set_charp(s, kp);
 	else
 		ret = -EINVAL;
-
-	spin_lock(&zswap_pools_lock);
 
 	if (!ret) {
 		put_pool = zswap_pool_current();

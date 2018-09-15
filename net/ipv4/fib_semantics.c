@@ -640,11 +640,6 @@ int fib_nh_match(struct fib_config *cfg, struct fib_info *fi)
 					    fi->fib_nh, cfg))
 			    return 1;
 		}
-#ifdef CONFIG_IP_ROUTE_CLASSID
-		if (cfg->fc_flow &&
-		    cfg->fc_flow != fi->fib_nh->nh_tclassid)
-			return 1;
-#endif
 		if ((!cfg->fc_oif || cfg->fc_oif == fi->fib_nh->nh_oif) &&
 		    (!cfg->fc_gw  || cfg->fc_gw == fi->fib_nh->nh_gw))
 			return 0;
@@ -979,8 +974,6 @@ fib_convert_metrics(struct fib_info *fi, const struct fib_config *cfg)
 			if (val == TCP_CA_UNSPEC)
 				return -EINVAL;
 		} else {
-			if (nla_len(nla) != sizeof(u32))
-				return -EINVAL;
 			val = nla_get_u32(nla);
 		}
 		if (type == RTAX_ADVMSS && val > 65535 - 40)
@@ -1613,20 +1606,18 @@ void fib_select_multipath(struct fib_result *res, int hash)
 	bool first = false;
 
 	for_nexthops(fi) {
-		if (net->ipv4.sysctl_fib_multipath_use_neigh) {
-			if (!fib_good_nh(nh))
-				continue;
-			if (!first) {
-				res->nh_sel = nhsel;
-				first = true;
-			}
-		}
-
 		if (hash > atomic_read(&nh->nh_upper_bound))
 			continue;
 
-		res->nh_sel = nhsel;
-		return;
+		if (!net->ipv4.sysctl_fib_multipath_use_neigh ||
+		    fib_good_nh(nh)) {
+			res->nh_sel = nhsel;
+			return;
+		}
+		if (!first) {
+			res->nh_sel = nhsel;
+			first = true;
+		}
 	} endfor_nexthops(fi);
 }
 #endif

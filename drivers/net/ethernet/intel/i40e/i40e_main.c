@@ -3604,7 +3604,7 @@ static bool i40e_clean_fdir_tx_irq(struct i40e_ring *tx_ring, int budget)
 			break;
 
 		/* prevent any other reads prior to eop_desc */
-		smp_rmb();
+		read_barrier_depends();
 
 		/* if the descriptor isn't done, no work yet to do */
 		if (!(eop_desc->cmd_type_offset_bsz &
@@ -4217,12 +4217,8 @@ static void i40e_napi_enable_all(struct i40e_vsi *vsi)
 	if (!vsi->netdev)
 		return;
 
-	for (q_idx = 0; q_idx < vsi->num_q_vectors; q_idx++) {
-		struct i40e_q_vector *q_vector = vsi->q_vectors[q_idx];
-
-		if (q_vector->rx.ring || q_vector->tx.ring)
-			napi_enable(&q_vector->napi);
-	}
+	for (q_idx = 0; q_idx < vsi->num_q_vectors; q_idx++)
+		napi_enable(&vsi->q_vectors[q_idx]->napi);
 }
 
 /**
@@ -4236,12 +4232,8 @@ static void i40e_napi_disable_all(struct i40e_vsi *vsi)
 	if (!vsi->netdev)
 		return;
 
-	for (q_idx = 0; q_idx < vsi->num_q_vectors; q_idx++) {
-		struct i40e_q_vector *q_vector = vsi->q_vectors[q_idx];
-
-		if (q_vector->rx.ring || q_vector->tx.ring)
-			napi_disable(&q_vector->napi);
-	}
+	for (q_idx = 0; q_idx < vsi->num_q_vectors; q_idx++)
+		napi_disable(&vsi->q_vectors[q_idx]->napi);
 }
 
 /**
@@ -11142,12 +11134,10 @@ static int i40e_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		  round_jiffies(jiffies + pf->service_timer_period));
 
 	/* add this PF to client device list and launch a client service task */
-	if (pf->flags & I40E_FLAG_IWARP_ENABLED) {
-		err = i40e_lan_add_device(pf);
-		if (err)
-			dev_info(&pdev->dev, "Failed to add PF to client API service list: %d\n",
-				 err);
-	}
+	err = i40e_lan_add_device(pf);
+	if (err)
+		dev_info(&pdev->dev, "Failed to add PF to client API service list: %d\n",
+			 err);
 
 #ifdef I40E_FCOE
 	/* create FCoE interface */
@@ -11325,11 +11315,10 @@ static void i40e_remove(struct pci_dev *pdev)
 		i40e_vsi_release(pf->vsi[pf->lan_vsi]);
 
 	/* remove attached clients */
-	if (pf->flags & I40E_FLAG_IWARP_ENABLED) {
-		ret_code = i40e_lan_del_device(pf);
-		if (ret_code)
-			dev_warn(&pdev->dev, "Failed to delete client device: %d\n",
-				 ret_code);
+	ret_code = i40e_lan_del_device(pf);
+	if (ret_code) {
+		dev_warn(&pdev->dev, "Failed to delete client device: %d\n",
+			 ret_code);
 	}
 
 	/* shutdown and destroy the HMC */

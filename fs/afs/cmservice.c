@@ -106,9 +106,6 @@ bool afs_cm_incoming_call(struct afs_call *call)
 	case CBProbe:
 		call->type = &afs_SRXCBProbe;
 		return true;
-	case CBProbeUuid:
-		call->type = &afs_SRXCBProbeUuid;
-		return true;
 	case CBTellMeAboutYourself:
 		call->type = &afs_SRXCBTellMeAboutYourself;
 		return true;
@@ -168,6 +165,7 @@ static int afs_deliver_cb_callback(struct afs_call *call)
 	struct afs_callback *cb;
 	struct afs_server *server;
 	__be32 *bp;
+	u32 tmp;
 	int ret, loop;
 
 	_enter("{%u}", call->unmarshall);
@@ -229,9 +227,9 @@ static int afs_deliver_cb_callback(struct afs_call *call)
 		if (ret < 0)
 			return ret;
 
-		call->count2 = ntohl(call->tmp);
-		_debug("CB count: %u", call->count2);
-		if (call->count2 != call->count && call->count2 != 0)
+		tmp = ntohl(call->tmp);
+		_debug("CB count: %u", tmp);
+		if (tmp != call->count && tmp != 0)
 			return -EBADMSG;
 		call->offset = 0;
 		call->unmarshall++;
@@ -239,14 +237,14 @@ static int afs_deliver_cb_callback(struct afs_call *call)
 	case 4:
 		_debug("extract CB array");
 		ret = afs_extract_data(call, call->buffer,
-				       call->count2 * 3 * 4, false);
+				       call->count * 3 * 4, false);
 		if (ret < 0)
 			return ret;
 
 		_debug("unmarshall CB array");
 		cb = call->request;
 		bp = call->buffer;
-		for (loop = call->count2; loop > 0; loop--, cb++) {
+		for (loop = call->count; loop > 0; loop--, cb++) {
 			cb->version	= ntohl(*bp++);
 			cb->expiry	= ntohl(*bp++);
 			cb->type	= ntohl(*bp++);

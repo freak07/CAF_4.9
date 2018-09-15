@@ -576,9 +576,9 @@ enum qeth_cq {
 };
 
 struct qeth_ipato {
-	bool enabled;
-	bool invert4;
-	bool invert6;
+	int enabled;
+	int invert4;
+	int invert6;
 	struct list_head entries;
 };
 
@@ -591,11 +591,6 @@ struct qeth_cmd_buffer {
 	int rc;
 	void (*callback) (struct qeth_channel *, struct qeth_cmd_buffer *);
 };
-
-static inline struct qeth_ipa_cmd *__ipa_cmd(struct qeth_cmd_buffer *iob)
-{
-	return (struct qeth_ipa_cmd *)(iob->data + IPA_PDU_HEADER_SIZE);
-}
 
 /**
  * definition of a qeth channel, used for read and write
@@ -854,7 +849,7 @@ struct qeth_trap_id {
  */
 static inline int qeth_get_elements_for_range(addr_t start, addr_t end)
 {
-	return PFN_UP(end) - PFN_DOWN(start);
+	return PFN_UP(end - 1) - PFN_DOWN(start);
 }
 
 static inline int qeth_get_micros(void)
@@ -974,8 +969,7 @@ int qeth_bridgeport_query_ports(struct qeth_card *card,
 int qeth_bridgeport_setrole(struct qeth_card *card, enum qeth_sbp_roles role);
 int qeth_bridgeport_an_set(struct qeth_card *card, int enable);
 int qeth_get_priority_queue(struct qeth_card *, struct sk_buff *, int, int);
-int qeth_get_elements_no(struct qeth_card *card, struct sk_buff *skb,
-			 int extra_elems, int data_offset);
+int qeth_get_elements_no(struct qeth_card *, struct sk_buff *, int);
 int qeth_get_elements_for_frags(struct sk_buff *);
 int qeth_do_send_packet_fast(struct qeth_card *, struct qeth_qdio_out_q *,
 			struct sk_buff *, struct qeth_hdr *, int, int, int);
@@ -1010,9 +1004,6 @@ struct qeth_cmd_buffer *qeth_get_setassparms_cmd(struct qeth_card *,
 int qeth_set_features(struct net_device *, netdev_features_t);
 int qeth_recover_features(struct net_device *);
 netdev_features_t qeth_fix_features(struct net_device *, netdev_features_t);
-netdev_features_t qeth_features_check(struct sk_buff *skb,
-				      struct net_device *dev,
-				      netdev_features_t features);
 
 /* exports for OSN */
 int qeth_osn_assist(struct net_device *, void *, int);
