@@ -24,10 +24,10 @@
 	/delete-node/ etm@619d000;
 	/delete-node/ etm@619e000;
 	/delete-node/ etm@619f000;
-	/delete-node/ cti@61b8000;
-	/delete-node/ cti@61b9000;
-	/delete-node/ cti@61ba000;
-	/delete-node/ cti@61bb000;
+	/delete-node/ cti@6198000;
+	/delete-node/ cti@6199000;
+	/delete-node/ cti@619a000;
+	/delete-node/ cti@619b000;
 	/delete-node/ jtagmm@619c000;
 	/delete-node/ jtagmm@619d000;
 	/delete-node/ jtagmm@619e000;
@@ -94,18 +94,6 @@
 				< 1804800 5712 >;
 		};
 	};
-
-	qcom,ion {
-		/delete-node/ qcom,ion-heap@8;
-	};
-};
-
-&secure_mem {
-	status = "disabled";
-};
-
-&kgsl_msm_iommu {
-	/delete-node/ gfx3d_secure;
 };
 
 &funnel_apss {
@@ -217,6 +205,21 @@
 
 		#clock-cells = <1>;
 	};
+
+	/* Disable secure_mem node */
+	qcom,ion {
+		/delete-node/ qcom,ion-heap@8;
+	};
+	/* delete hypervisor node for GPU*/
+	/delete-node/ qcom,kgsl-hyp;
+};
+
+&secure_mem {
+	status = "disabled";
+};
+
+&qseecom_ta_mem {
+	size = <0 0x400000>;
 };
 
 &clock_gcc_mdss {
@@ -237,4 +240,9 @@
 
 	/* disable mem pools */
 	/delete-node/qcom,gpu-mempools;
+};
+
+/* Disable secure context for Graphics*/
+&kgsl_msm_iommu {
+	/delete-node/ gfx3d_secure;
 };
